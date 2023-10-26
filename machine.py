@@ -15,6 +15,7 @@ from file_system import File_System
 
 MAX = 8192                  # Max size of message   
 INIT_STATUS = 'Not Joined'  # Initial status of a node
+BASE_FS_PORT = 9000
 BASE_PORT = 8000
 
 
@@ -39,11 +40,58 @@ class Machine:
         self.status = 'Joined' if MACHINE_NUM==1 else STATUS
         self.membership_list = MembershipList()  
 
+
+    def send_message(self, sock_fd, msg):
+        ''' Send a message to another machine '''
+        try:
+            sock_fd.sendall(msg)
+        except:
+            pass
+
+
     def server(self):
-        pass
+        self.fail_detector = Failure_Detector(self.MACHINE_NUM, self.logger, self.membership_list, self.status)
+        self.fail_detector.start_machine()
+
+        self.file_system = File_System(self.MACHINE_NUM, self.logger, self.membership_list, self.status)
+        self.file_system.start_machine()
 
 
-    def command(self):
+    def put(self, local_filename, sdfs_filename):
+        ''' Put a file in the SDFS '''
+        sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
+        host = list(self.membership_list.active_nodes.keys())[0]
+        host[1] = host[1] - BASE_PORT + BASE_FS_PORT
+        sock_fd.connect((host[0], host[1]))
+        # mssg = FileSystemMessage(msg_type="put", 
+        #                         leader_host=self.leader_node, 
+        #                         origin_host=self.host,
+        #                         origin_filename=local_filename,
+        #                         dest_filename=sdfs_filename
+        #                      )    
+
+        file_content = open(local_filename, 'rb').read()
+
+        mssg = Message(msg_type="put", 
+                        host=self.host,
+                        membership_list=None,
+                        counter=None,
+                        filename=sdfs_filename,
+                        content=file_content
+                        )                      
+
+        self.send_message(sock_fd, pickle.dumps(mssg))
+        data = sock.recv(MAX)
+        if pickle.loads(data) == "ACK":
+            print("[ACK Received] Put file successfully")
+        else:
+            print("[NACK Received] Put file failed")
+        
+
+    def client(self):
+        ''' Start the client '''
         while True:
             inp = input()
 
@@ -64,8 +112,7 @@ class Machine:
 
             elif inp.startswith("put"):
                 _, local_filename, sdfs_filename = inp.split(' ')
-                # Read local_file and send the contents of the leader
-                self.file_system.put(local_filename, sdfs_filename)
+                self.put(local_filename, sdfs_filename)
 
             elif inp.startswith("get"):
                 _, sdfs_filename, local_filename = inp.split(' ')
@@ -76,28 +123,15 @@ class Machine:
             elif inp.startswith("ls"):
                 _, sdfs_filename = inp.split(' ')
 
-    def client(self):
-        ''' Start the client '''
-        command_thread = threading.Thread(target=self.command)
-
-        command_thread.start()
-        command_thread.join()
-
 
     def start_machine(self):
         print(f"Machine {self.MACHINE_NUM} Running, Status: {self.status}")
 
-        self.fail_detector = Failure_Detector(self.MACHINE_NUM, self.logger, self.membership_list, self.status)
-        self.fail_detector.start_machine()
-
-        self.file_system = File_System(self.MACHINE_NUM, self.logger, self.membership_list, self.status)
-        self.file_system.start_machine()
-
-        # server_thread = threading.Thread(target=self.server)
+        server_thread = threading.Thread(target=self.server)
         client_thread = threading.Thread(target=self.client)
-        # server_thread.start()
+        server_thread.start()
         client_thread.start()
-        # server_thread.join()
+        server_thread.join()
         client_thread.join()
 
 

@@ -64,7 +64,7 @@ class Failure_Detector:
         ''' Add a new member to the membership list (when join message received) '''
         host = mssg.host
         membership_counter = mssg.counter
-        self.membership_list.add_member(host=host, 
+        self.membership_list.add_member(host=host,
                                         membership_counter=membership_counter, 
                                         suspicion={"flag":0, "start_time":None}
                                         )
@@ -597,8 +597,6 @@ class Failure_Detector:
     
 
     def start_machine(self):
-        # print(f"Machine {self.MACHINE_NUM} Running, Status: {self.status}")
-
         server_thread = threading.Thread(target=self.server)
         client_thread = threading.Thread(target=self.client)
 
