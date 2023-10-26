@@ -8,8 +8,19 @@ class Message:
         self.membership_list = membership_list
         self.counter = counter
         self.kwargs = kwargs
+    
 
+class FileSystemMessage:
+    def __init__(self, msg_type, leader_host, dest_host, replica_list, origin_filename, dest_filename, **kwargs):
+        self.type = msg_type
+        self.leader_host = leader_host
+        self.dest_host = dest_host
+        self.replica_list = replica_list
+        self.origin_filename = origin_filename
+        self.dest_filename = dest_filename
+        self.kwargs = kwargs
         
+
 class MembershipInfo:
     def __init__(self, host, membership_counter, clock_time, suspicion_flag=0, suspicion_start_time=None):
         self.host = host
@@ -24,6 +35,9 @@ class MembershipList:
         self.cleanup_status_dict = {} # 0: not cleaning up, 1: host in cleanup state 
         self.file_replication_dict = {}
 
+    def put_replica(self, sdfs_filename, dest_host):
+        """adds replica info for a particular filename to the file_replication_dict"""
+        pass
 
     def add_member(self, host, membership_counter, suspicion):
         clock_time = datetime.datetime.now()

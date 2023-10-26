@@ -297,6 +297,7 @@ class Failure_Detector:
 
     def server(self):
         ''' Start the server '''
+        print("Starting server thread for failure detection")
         fail_thread = threading.Thread(target=self.fail)
         suspect_thread = threading.Thread(target=self.suspect)
         remove_thread = threading.Thread(target=self.remove_member)
@@ -331,7 +332,7 @@ class Failure_Detector:
 
     def ping(self, sock_fd=None):
         ''' Send a ping message to the nodes in the membership list.
-            Also update the memebership list of the current machine with the counter
+            Also update the membership list of the current machine with the counter
         '''
         while True:
             if self.SUSPICION_RECVD:
@@ -387,6 +388,7 @@ class Failure_Detector:
     def list_mem(self):
         ''' List the membership List '''
         print_list = []
+        print("Listing membership list")
         for k, v in self.membership_list.active_nodes.items():
             print_list.append("Node ID: {} ----- Counter: {}".format(k, v.membership_counter))
         
@@ -595,15 +597,15 @@ class Failure_Detector:
     
 
     def start_machine(self):
-        print(f"Machine {self.MACHINE_NUM} Running, Status: {self.status}")
+        # print(f"Machine {self.MACHINE_NUM} Running, Status: {self.status}")
 
         server_thread = threading.Thread(target=self.server)
         client_thread = threading.Thread(target=self.client)
 
         server_thread.start()
         client_thread.start()
-        server_thread.join()
-        client_thread.join()
+        # server_thread.join()
+        # client_thread.join()
 
 
 

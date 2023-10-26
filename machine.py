@@ -13,7 +13,9 @@ from failure_detector import Failure_Detector
 from file_system import File_System
 
 
+MAX = 8192                  # Max size of message   
 INIT_STATUS = 'Not Joined'  # Initial status of a node
+BASE_PORT = 8000
 
 
 class Machine:
@@ -35,16 +37,11 @@ class Machine:
         self.logger = logging.getLogger(f'vm{self.MACHINE_NUM}.log')
 
         self.status = 'Joined' if MACHINE_NUM==1 else STATUS
-        self.membership_list = MembershipList()
-        self.fail_detector = Failure_Detector(MACHINE_NUM, self.logger, self.membership_list, self.status)
-        self.fail_detector.start_machine()
-
-        self.file_system = File_System(MACHINE_NUM, self.logger, self.membership_list, self.status)
-        self.file_system.start_machine()
-        
+        self.membership_list = MembershipList()  
 
     def server(self):
         pass
+
 
     def command(self):
         while True:
@@ -66,9 +63,18 @@ class Machine:
                 self.fail_detector.disable_suspicion()
 
             elif inp.startswith("put"):
-                _, filename, sdfs_filename = inp.split()
-                # TODO: Read contents of filename and send the contents
-                self.file_system.put(sdfs_filename)
+                _, local_filename, sdfs_filename = inp.split(' ')
+                # Read local_file and send the contents of the leader
+                self.file_system.put(local_filename, sdfs_filename)
+
+            elif inp.startswith("get"):
+                _, sdfs_filename, local_filename = inp.split(' ')
+
+            elif inp.startswith("delete"):
+                _, sdfs_filename = inp.split(' ')
+            
+            elif inp.startswith("ls"):
+                _, sdfs_filename = inp.split(' ')
 
     def client(self):
         ''' Start the client '''
@@ -81,17 +87,23 @@ class Machine:
     def start_machine(self):
         print(f"Machine {self.MACHINE_NUM} Running, Status: {self.status}")
 
-        server_thread = threading.Thread(target=self.server)
-        client_thread = threading.Thread(target=self.client)
+        self.fail_detector = Failure_Detector(self.MACHINE_NUM, self.logger, self.membership_list, self.status)
+        self.fail_detector.start_machine()
 
-        server_thread.start()
+        self.file_system = File_System(self.MACHINE_NUM, self.logger, self.membership_list, self.status)
+        self.file_system.start_machine()
+
+        # server_thread = threading.Thread(target=self.server)
+        client_thread = threading.Thread(target=self.client)
+        # server_thread.start()
         client_thread.start()
-        server_thread.join()
+        # server_thread.join()
         client_thread.join()
 
 
-if __name__ == "__main__":
-    MACHINE_NUM = sys.argv[1]
+# if __name__ == "__main__":
+#     MACHINE_NUM = sys.argv[1]
+#     print(MACHINE_NUM)
 
-    machine = Machine(int(MACHINE_NUM))
-    machine.start_machine()
+#     machine = Machine(int(MACHINE_NUM))
+#     machine.start_machine()
