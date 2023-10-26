@@ -54,19 +54,20 @@ class File_System:
             pass
 
 
-    def leader_election(self, sock_fd):
+    def leader_election(self, sock_fd=None):
         ''' Detect whether the leader has failed 
             If the leader has failed, start a new election
         '''
         while True:
-            if self.leader_node == None or self.leader_node not in self.membership_list.active_nodes: # condition for running leader election
+            if self.status == "Joined":
+                # if self.leader_node == None or self.leader_node not in self.membership_list.active_nodes: # condition for running leader election
                 machines = list(self.membership_list.active_nodes.keys())
+                print(machines)
                 machine_ids = [machine[1] for machine in machines]
-                min_machine_id_index = np.argmin(machine_ids)
+                max_machine_id_index = np.argmax(machine_ids)
 
-                self.leader_node = machines[min_machine_id_index]
+                self.leader_node = machines[max_machine_id_index]
                 self.logger.info(f"New leader elected: {self.leader_node}")
-
 
                 # TODO: Send a message to all machines to update the leader
                 # host = (self.ip, self.port, self.version)
@@ -78,7 +79,7 @@ class File_System:
                 # self.send_leader_msg(msg, sock_fd)
 
                 # TODO: For the failed node, check the replicas stored and re-replicate the files
-                time.sleep(8)
+                time.sleep(4)
 
 
     def get(self, mssg, sock_fd):
@@ -112,7 +113,7 @@ class File_System:
             if sdfsfilename not in self.membership_list.file_replication_dict:
                 # No file found error
                 msg = Message('Error', self.nodeId, None, None, error_message="File Does not Exist")
-                self.send_message(sock_fd, pickle.dumps(msg)])
+                self.send_message(sock_fd, pickle.dumps(msg))
             else:
                 replica_dict = self.membership_list.file_replication_dict[sdfsfilename]
                 replica_server = replica_dict['primary']
@@ -121,7 +122,7 @@ class File_System:
 
         else:
             # If not leader, forward the message to the current leader
-            self.send_message(sock_fd, data])
+            self.send_message(sock_fd, data)
 
 
     def receive_writes(self):
@@ -167,6 +168,7 @@ class File_System:
         sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
+        print(self.data_port)
         sock_fd.bind((self.ip, self.data_port))
         sock_fd.listen(5)
 
@@ -239,6 +241,7 @@ class File_System:
         recv_sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         recv_sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
+        print("Receiving messages from leader on port ", self.port)
         recv_sock_fd.bind((self.ip, self.port))
         recv_sock_fd.listen(5)
 
@@ -394,11 +397,9 @@ class File_System:
         receive_reads_thread = threading.Thread(target=self.receive_reads)
 
         leader_election_thread.start()
-        receive_thread.start()
-        receive_writes_thread.start()
-        receive_reads_thread.start()
-        # receive_thread.join()
-        # leader_election_thread.join()
+        # receive_thread.start()
+        # receive_writes_thread.start()
+        # receive_reads_thread.start()
     
 
 

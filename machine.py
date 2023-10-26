@@ -53,6 +53,7 @@ class Machine:
         self.fail_detector = Failure_Detector(self.MACHINE_NUM, self.logger, self.membership_list, self.status)
         self.fail_detector.start_machine()
 
+        time.sleep(4)
         self.file_system = File_System(self.MACHINE_NUM, self.logger, self.membership_list, self.status)
         self.file_system.start_machine()
 
