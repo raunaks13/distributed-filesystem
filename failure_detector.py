@@ -23,22 +23,16 @@ MESSAGE_DROP_RATE = 0.0     # Message drop rate
 
 class Failure_Detector:
 
-    def __init__(self, MACHINE_NUM, LOGGER, MEM_LIST, STATUS):
+    def __init__(self, MACHINE_NUM, MACHINE):
         self.MACHINE_NUM = MACHINE_NUM
         self.port = BASE_PORT + MACHINE_NUM
         self.hostname = "fa23-cs425-37" + f"{MACHINE_NUM:02d}" + ".cs.illinois.edu"
         self.ip = socket.gethostbyname(self.hostname)
-        
-        if self.MACHINE_NUM == 1:
-            self.version = time.mktime(datetime.datetime.now().timetuple())
-            self.nodeId = (self.ip, self.port, self.version)
-
-        self.membership_list = MEM_LIST
-        self.status = STATUS
+        self.machine = MACHINE
         
         self.ping_counter = -1
         self.membership_mutex = threading.Lock()
-        self.status_mutex = threading.Lock()
+        self.machine.status_mutex = threading.Lock()
         self.ENABLE_SUSPICION = False
         self.SUSPICION_RECVD = False
         self.sock_fd = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -48,8 +42,6 @@ class Failure_Detector:
         machine_num = INTRODUCER[0]
         self.introducer_ip = socket.gethostbyname(INTRODUCER[1])
         self.introducer_port = BASE_PORT + machine_num
-
-        self.logger = LOGGER
 
 
     def send_message(self, sock_fd, msg, ip, port):
@@ -64,14 +56,14 @@ class Failure_Detector:
         ''' Add a new member to the membership list (when join message received) '''
         host = mssg.host
         membership_counter = mssg.counter
-        self.membership_list.add_member(host=host,
+        self.machine.membership_list.add_member(host=host,
                                         membership_counter=membership_counter, 
                                         suspicion={"flag":0, "start_time":None}
                                         )
 
-        self.logger.info('Join: IP {}, Port: {}, Version: {}'.format(host[0], host[1], host[2]))
-        for khost,v in self.membership_list.active_nodes.items():
-            self.logger.debug("JoinMembershipLog: {}, Host {}, Ctr {}".format(host[1], khost, v.membership_counter))
+        self.machine.logger.info('Join: IP {}, Port: {}, Version: {}'.format(host[0], host[1], host[2]))
+        for khost,v in self.machine.membership_list.active_nodes.items():
+            self.machine.logger.debug("JoinMembershipLog: {}, Host {}, Ctr {}".format(host[1], khost, v.membership_counter))
 
 
     def update_membership_list(self, mssg):
@@ -79,57 +71,57 @@ class Failure_Detector:
         msg_host = mssg.host
         msg_membership_list = mssg.membership_list
 
-        for khost, v in self.membership_list.active_nodes.items():
-            self.logger.debug("PrevPingerLog: {}, Host {}, Ctr {}".format(msg_host[1], khost, v.membership_counter))
-        self.logger.debug("\n\n")
+        for khost, v in self.machine.membership_list.active_nodes.items():
+            self.machine.logger.debug("PrevPingerLog: {}, Host {}, Ctr {}".format(msg_host[1], khost, v.membership_counter))
+        self.machine.logger.debug("\n\n")
 
         for khost, v in msg_membership_list.active_nodes.items():
-            self.logger.debug("MsgMembershipList, Host {}, Ctr {}".format(khost, v.membership_counter))
-        self.logger.debug("\n\n")
+            self.machine.logger.debug("MsgMembershipList, Host {}, Ctr {}".format(khost, v.membership_counter))
+        self.machine.logger.debug("\n\n")
 
         # For each host in the received membership list, update the membership list of the current machine
         for host in msg_membership_list.active_nodes.keys():
-            if host == self.nodeId:
+            if host == self.machine.nodeId:
                 continue
 
             # If the host is not in the current machine's membership list, add it
-            if host not in self.membership_list.active_nodes.keys():
+            if host not in self.machine.membership_list.active_nodes.keys():
                 if msg_membership_list.cleanup_status_dict[host]["flag"] == 1:
                     continue
-                self.membership_list.add_member(host, 
+                self.machine.membership_list.add_member(host, 
                                                 msg_membership_list.active_nodes[host].membership_counter, 
                                                 msg_membership_list.active_nodes[host].suspicion
                                                 )
             # If the host is in the current machine's membership list, update it                                    
             else:
                 if self.ENABLE_SUSPICION:
-                    self.membership_list.update_member_with_suspicion(host, 
+                    self.machine.membership_list.update_member_with_suspicion(host, 
                                                                         msg_membership_list.active_nodes[host].membership_counter, 
                                                                         msg_membership_list.active_nodes[host].suspicion,
                                                                         msg_membership_list.cleanup_status_dict[host],
-                                                                        self.logger
+                                                                        self.machine.logger
                                                                         )
                 else:
-                    self.membership_list.update_member(host, 
+                    self.machine.membership_list.update_member(host, 
                                                         msg_membership_list.active_nodes[host].membership_counter,
                                                         msg_membership_list.cleanup_status_dict[host],
-                                                        self.logger
+                                                        self.machine.logger
                                                        )
 
-        for khost, v in self.membership_list.active_nodes.items():
-            self.logger.debug("AfterPingerLog: {}, Host {}, Ctr {}".format(msg_host[1], khost, v.membership_counter))
-        self.logger.debug("\n\n")
+        for khost, v in self.machine.membership_list.active_nodes.items():
+            self.machine.logger.debug("AfterPingerLog: {}, Host {}, Ctr {}".format(msg_host[1], khost, v.membership_counter))
+        self.machine.logger.debug("\n\n")
 
 
     def remove_membership_list(self, mssg):
         ''' Remove a member from the membership list '''
         host = mssg.host
-        self.membership_list.delete_member(host) # delete host from current machine's membership list
-        self.logger.info('Left: IP {}, Port: {}, Version: {}'.format(host[0], host[1], host[2]))
+        self.machine.membership_list.delete_member(host) # delete host from current machine's membership list
+        self.machine.logger.info('Left: IP {}, Port: {}, Version: {}'.format(host[0], host[1], host[2]))
 
         print('Leave: IP {}, Port: {}, Version: {}'.format(host[0], host[1], host[2]))
-        for khost,v in self.membership_list.active_nodes.items():
-            self.logger.debug("LeaveMembershipLog: {}, Host {}, Ctr {}".format(host[1], khost, v.membership_counter))
+        for khost,v in self.machine.membership_list.active_nodes.items():
+            self.machine.logger.debug("LeaveMembershipLog: {}, Host {}, Ctr {}".format(host[1], khost, v.membership_counter))
 
 
     def remove_member(self):
@@ -140,7 +132,7 @@ class Failure_Detector:
 
             cleanup_host = None
             # For each host in the membership list, check if it is failed. If failed, remove it
-            for host, cleanup_status in self.membership_list.cleanup_status_dict.items():
+            for host, cleanup_status in self.machine.membership_list.cleanup_status_dict.items():
 
                 if cleanup_status["flag"] == 1:
                     time_now = datetime.datetime.now()
@@ -151,10 +143,10 @@ class Failure_Detector:
         
             if cleanup_host is not None:
                 with self.membership_mutex:
-                    self.membership_list.delete_member(cleanup_host)
+                    self.machine.membership_list.delete_member(cleanup_host)
                             
                 print(f'Node {cleanup_host[0]}:{cleanup_host[1]} has been removed at {datetime.datetime.now()}\n')
-                self.logger.debug(f'Node {cleanup_host} has been removed')
+                self.machine.logger.debug(f'Node {cleanup_host} has been removed')
             
             time.sleep(0.2)
 
@@ -166,23 +158,23 @@ class Failure_Detector:
                 continue
 
             if self.ENABLE_SUSPICION:
-                active_nodes = list(self.membership_list.active_nodes.keys()).copy()
+                active_nodes = list(self.machine.membership_list.active_nodes.keys()).copy()
                 for host in active_nodes:
 
-                    mem_info = self.membership_list.active_nodes[host]
+                    mem_info = self.machine.membership_list.active_nodes[host]
                     heartbeat_increase_time = mem_info.heartbeat_increase_time
 
                     time_now = datetime.datetime.now()
                     if (time_now - heartbeat_increase_time).total_seconds() > T_SUSPECT:
 
-                        if self.membership_list.active_nodes[host].suspicion["flag"] == 0:
+                        if self.machine.membership_list.active_nodes[host].suspicion["flag"] == 0:
 
                             with self.membership_mutex:
-                                self.membership_list.active_nodes[host].suspicion["flag"] = 1
-                                self.membership_list.active_nodes[host].suspicion["start_time"] = time_now
+                                self.machine.membership_list.active_nodes[host].suspicion["flag"] = 1
+                                self.machine.membership_list.active_nodes[host].suspicion["start_time"] = time_now
 
                             print(f'Node {host[0]}:{host[1]} has been suspected at {datetime.datetime.now()} \n')
-                            self.logger.debug(f'Node {host} has been suspected')
+                            self.machine.logger.debug(f'Node {host} has been suspected')
 
             time.sleep(0.2)
 
@@ -196,10 +188,10 @@ class Failure_Detector:
             if self.SUSPICION_RECVD:
                 continue
 
-            active_nodes = list(self.membership_list.active_nodes.keys()).copy()
+            active_nodes = list(self.machine.membership_list.active_nodes.keys()).copy()
             for host in active_nodes:
 
-                mem_info = self.membership_list.active_nodes[host]
+                mem_info = self.machine.membership_list.active_nodes[host]
                 time_now = datetime.datetime.now()
 
                 # If GOSSIP + S is enabled, then check if the node is suspected for T_FAIL seconds
@@ -208,28 +200,28 @@ class Failure_Detector:
                         suspicion_start_time = mem_info.suspicion["start_time"]
 
                         if (time_now - suspicion_start_time).total_seconds() > T_FAIL:
-                            if self.membership_list.cleanup_status_dict[host]["flag"] == 0:
+                            if self.machine.membership_list.cleanup_status_dict[host]["flag"] == 0:
 
                                 with self.membership_mutex:
-                                    self.membership_list.cleanup_status_dict[host]["flag"] = 1
-                                    self.membership_list.cleanup_status_dict[host]["cleanup_start_time"] = time_now
+                                    self.machine.membership_list.cleanup_status_dict[host]["flag"] = 1
+                                    self.machine.membership_list.cleanup_status_dict[host]["cleanup_start_time"] = time_now
 
                                 print(f'Node {host[0]}:{host[1]} has been failed {datetime.datetime.now()} \n')
-                                self.logger.debug(f'Node {host} has been failed')
+                                self.machine.logger.debug(f'Node {host} has been failed')
 
                 # If GOSSIP, then check if the node has not sent a heartbeat for T_FAIL seconds
                 else:
                     heartbeat_increase_time = mem_info.heartbeat_increase_time
 
                     if (time_now - heartbeat_increase_time).total_seconds() > T_FAIL:
-                        if self.membership_list.cleanup_status_dict[host]["flag"] == 0:
+                        if self.machine.membership_list.cleanup_status_dict[host]["flag"] == 0:
 
                             with self.membership_mutex:
-                                self.membership_list.cleanup_status_dict[host]["flag"] = 1
-                                self.membership_list.cleanup_status_dict[host]["cleanup_start_time"] = time_now
+                                self.machine.membership_list.cleanup_status_dict[host]["flag"] = 1
+                                self.machine.membership_list.cleanup_status_dict[host]["cleanup_start_time"] = time_now
 
                             print(f'Node {host[0]}:{host[1]} has been failed at {datetime.datetime.now()} \n')
-                            self.logger.debug(f'Node {host} has been failed')
+                            self.machine.logger.debug(f'Node {host} has been failed')
 
             time.sleep(0.2)
 
@@ -244,7 +236,7 @@ class Failure_Detector:
         while True:
             data, server = sock_fd.recvfrom(MAX) # receive serialized data from another machine
             
-            if self.status == 'Joined':
+            if self.machine.status == 'Joined':
                 if data:
                     mssg = pickle.loads(data)
 
@@ -271,8 +263,8 @@ class Failure_Detector:
 
                         # Change the heartbeat increase time to current time for all nodes
                         with self.membership_mutex:
-                            for host in self.membership_list.active_nodes.keys():
-                                self.membership_list.active_nodes[host].heartbeat_increase_time = datetime.datetime.now()
+                            for host in self.machine.membership_list.active_nodes.keys():
+                                self.machine.membership_list.active_nodes[host].heartbeat_increase_time = datetime.datetime.now()
                                                   
                         self.SUSPICION_RECVD = False
                         print("*** GOSSIP + S Enabled ***\n")
@@ -286,8 +278,8 @@ class Failure_Detector:
 
                         # Change the heartbeat increase time to current time for all nodes
                         with self.membership_mutex:
-                            for host in self.membership_list.active_nodes.keys():
-                                self.membership_list.active_nodes[host].heartbeat_increase_time = datetime.datetime.now()
+                            for host in self.machine.membership_list.active_nodes.keys():
+                                self.machine.membership_list.active_nodes[host].heartbeat_increase_time = datetime.datetime.now()
                                                   
                         self.SUSPICION_RECVD = False
                         print("*** GOSSIP Enabled ***\n")
@@ -316,9 +308,9 @@ class Failure_Detector:
     def gossip_message(self, msg, sock_fd=None):
         ''' Gossip a message to B random nodes from the membership list '''
         GOSSIP_NODES = []
-        for mem_host in self.membership_list.active_nodes.keys():
-            if mem_host != self.nodeId:
-                if self.membership_list.cleanup_status_dict[mem_host]["flag"] == 0:
+        for mem_host in self.machine.membership_list.active_nodes.keys():
+            if mem_host != self.machine.nodeId:
+                if self.machine.membership_list.cleanup_status_dict[mem_host]["flag"] == 0:
                     GOSSIP_NODES.append((mem_host[0], mem_host[1]))
 
         gossip_neighbours = random.sample(GOSSIP_NODES, B) if B < len(GOSSIP_NODES) else GOSSIP_NODES
@@ -338,26 +330,26 @@ class Failure_Detector:
             if self.SUSPICION_RECVD:
                 continue
 
-            if self.status == 'Joined':
-                host = (self.ip, self.port, self.version)
+            if self.machine.status == 'Joined':
                 self.ping_counter += 1
                 
                 # Update your own membership list
-                if host not in self.membership_list.active_nodes.keys():
-                    self.membership_list.add_member(host=host, 
+                if self.machine.nodeId not in self.machine.membership_list.active_nodes.keys():
+                    self.machine.membership_list.add_member(host=self.machine.nodeId, 
                                                     membership_counter=self.ping_counter, 
                                                     suspicion={"flag":0, "start_time":None}
                                                     )
                 else:
-                    self.membership_list.update_member(host=host, 
+                    self.machine.membership_list.update_member(host=self.machine.nodeId, 
                                                         membership_counter=self.ping_counter, 
                                                         cleanup_status=None,
-                                                        logger=self.logger
+                                                        logger=self.machine.logger
                                                         )  
                 
+                
                 msg = Message(msg_type='ping', 
-                              host=host, 
-                              membership_list=self.membership_list, 
+                              host=self.machine.nodeId, 
+                              membership_list=self.machine.membership_list, 
                               counter=self.ping_counter
                              )
                 self.gossip_message(msg, sock_fd)
@@ -367,19 +359,19 @@ class Failure_Detector:
     def node_join(self):
         # Add the current machine to its own membership list and send message to the introducer
         self.version = time.mktime(datetime.datetime.now().timetuple())
-        host = (self.ip, self.port, self.version)
-        self.nodeId = host
+        host = (self.ip, self.port, self.version, self.MACHINE_NUM)
+        self.machine.nodeId = host
 
         with self.membership_mutex:
-            if host not in self.membership_list.active_nodes.keys():
-                self.membership_list.add_member(host=host, 
+            if host not in self.machine.membership_list.active_nodes.keys():
+                self.machine.membership_list.add_member(host=host, 
                                                 membership_counter=self.ping_counter,
                                                 suspicion={"flag":0, "start_time":None}
                                                 )
 
         msg = Message(msg_type='join', host=host, membership_list=None, counter=self.ping_counter)
-        with self.status_mutex:
-            self.status = 'Joined'
+        with self.machine.status_mutex:
+            self.machine.status = 'Joined'
         self.send_message(self.sock_fd, pickle.dumps(msg), self.introducer_ip, self.introducer_port)
         
         return 1
@@ -389,7 +381,7 @@ class Failure_Detector:
         ''' List the membership List '''
         print_list = []
         print("Listing membership list")
-        for k, v in self.membership_list.active_nodes.items():
+        for k, v in self.machine.membership_list.active_nodes.items():
             print_list.append("Node ID: {} ----- Counter: {}".format(k, v.membership_counter))
         
         print("Membership List: ")
@@ -400,7 +392,7 @@ class Failure_Detector:
 
     def list_self(self):
         ''' List Self Node ID '''
-        print(self.nodeId)
+        print(self.machine.nodeId)
         print("\n")
 
 
@@ -409,8 +401,8 @@ class Failure_Detector:
         self.SUSPICION_RECVD = True
         print("\nSwitching to GOSSIP + S ...")
 
-        for neighbour in self.membership_list.active_nodes.keys():
-            if neighbour == self.nodeId:
+        for neighbour in self.machine.membership_list.active_nodes.keys():
+            if neighbour == self.machine.nodeId:
                 continue
             multicast_ip = neighbour[0]
             multicast_port = neighbour[1]
@@ -425,8 +417,8 @@ class Failure_Detector:
 
         # Change the heartbeat increase time to current time for all nodes
         with self.membership_mutex:
-            for host in self.membership_list.active_nodes.keys():
-                self.membership_list.active_nodes[host].heartbeat_increase_time = datetime.datetime.now()
+            for host in self.machine.membership_list.active_nodes.keys():
+                self.machine.membership_list.active_nodes[host].heartbeat_increase_time = datetime.datetime.now()
 
         self.SUSPICION_RECVD = False
         print("*** GOSSIP + S Enabled ***\n")
@@ -438,8 +430,8 @@ class Failure_Detector:
         self.SUSPICION_RECVD = True
         print("\nSwitching to GOSSIP ...")
 
-        for neighbour in self.membership_list.active_nodes.keys():
-            if neighbour == self.nodeId:
+        for neighbour in self.machine.membership_list.active_nodes.keys():
+            if neighbour == self.machine.nodeId:
                 continue
             multicast_ip = neighbour[0]
             multicast_port = neighbour[1]
@@ -454,8 +446,8 @@ class Failure_Detector:
 
         # Change the heartbeat increase time to current time for all nodes
         with self.membership_mutex:
-            for host in self.membership_list.active_nodes.keys():
-                self.membership_list.active_nodes[host].heartbeat_increase_time = datetime.datetime.now()
+            for host in self.machine.membership_list.active_nodes.keys():
+                self.machine.membership_list.active_nodes[host].heartbeat_increase_time = datetime.datetime.now()
 
         self.SUSPICION_RECVD = False
         print("*** GOSSIP Enabled ***\n")
@@ -474,7 +466,7 @@ class Failure_Detector:
  
             if inp == "list_mem":
                 print_list = []
-                for k, v in self.membership_list.active_nodes.items():
+                for k, v in self.machine.membership_list.active_nodes.items():
                     print_list.append("Node ID: {} ----- Counter: {}".format(k, v.membership_counter))
                 
                 print("Membership List: ")
@@ -484,7 +476,7 @@ class Failure_Detector:
 
 
             elif inp == "list_self":
-                print(self.nodeId)
+                print(self.machine.nodeId)
                 print("\n")
 
 
@@ -492,19 +484,19 @@ class Failure_Detector:
                 # Add the current machine to its own membership list and send message to the introducer
                 self.version = time.mktime(datetime.datetime.now().timetuple())
                 host = (self.ip, self.port, self.version)
-                self.nodeId = host
+                self.machine.nodeId = host
 
                 with self.membership_mutex:
-                    if host not in self.membership_list.active_nodes.keys():
-                        self.membership_list.add_member(host=host, 
+                    if host not in self.machine.membership_list.active_nodes.keys():
+                        self.machine.membership_list.add_member(host=host, 
                                                         membership_counter=self.ping_counter,
                                                         suspicion={"flag":0, "start_time":None}
                                                         )
 
                 msg = Message(msg_type='join', host=host, membership_list=None, counter=self.ping_counter)
 
-                with self.status_mutex:
-                    self.status = 'Joined'
+                with self.machine.status_mutex:
+                    self.machine.status = 'Joined'
                 
                 self.send_message(sock_fd, pickle.dumps(msg), introducer_ip, introducer_port)
 
@@ -513,12 +505,12 @@ class Failure_Detector:
                 with self.membership_mutex:
 
                     host = (self.ip, self.port, self.version)
-                    with self.status_mutex:
-                        self.status = 'Not Joined'
+                    with self.machine.status_mutex:
+                        self.machine.status = 'Not Joined'
 
-                    host_list = list(self.membership_list.active_nodes.keys())
+                    host_list = list(self.machine.membership_list.active_nodes.keys())
                     for active_host in host_list:
-                        self.membership_list.delete_member(active_host)
+                        self.machine.membership_list.delete_member(active_host)
                 
                     msg = Message(msg_type='leave', host=host, membership_list=None, counter=self.ping_counter)
                     self.send_message(sock_fd, pickle.dumps(msg), introducer_ip, introducer_port)
@@ -528,8 +520,8 @@ class Failure_Detector:
                 self.SUSPICION_RECVD = True
                 print("\nSwitching to GOSSIP + S ...")
 
-                for neighbour in self.membership_list.active_nodes.keys():
-                    if neighbour == self.nodeId:
+                for neighbour in self.machine.membership_list.active_nodes.keys():
+                    if neighbour == self.machine.nodeId:
                         continue
                     multicast_ip = neighbour[0]
                     multicast_port = neighbour[1]
@@ -544,8 +536,8 @@ class Failure_Detector:
 
                 # Change the heartbeat increase time to current time for all nodes
                 with self.membership_mutex:
-                    for host in self.membership_list.active_nodes.keys():
-                        self.membership_list.active_nodes[host].heartbeat_increase_time = datetime.datetime.now()
+                    for host in self.machine.membership_list.active_nodes.keys():
+                        self.machine.membership_list.active_nodes[host].heartbeat_increase_time = datetime.datetime.now()
 
                 self.SUSPICION_RECVD = False
                 print("*** GOSSIP + S Enabled ***\n")
@@ -555,8 +547,8 @@ class Failure_Detector:
                 self.SUSPICION_RECVD = True
                 print("\nSwitching to GOSSIP ...")
 
-                for neighbour in self.membership_list.active_nodes.keys():
-                    if neighbour == self.nodeId:
+                for neighbour in self.machine.membership_list.active_nodes.keys():
+                    if neighbour == self.machine.nodeId:
                         continue
                     multicast_ip = neighbour[0]
                     multicast_port = neighbour[1]
@@ -571,8 +563,8 @@ class Failure_Detector:
 
                 # Change the heartbeat increase time to current time for all nodes
                 with self.membership_mutex:
-                    for host in self.membership_list.active_nodes.keys():
-                        self.membership_list.active_nodes[host].heartbeat_increase_time = datetime.datetime.now()
+                    for host in self.machine.membership_list.active_nodes.keys():
+                        self.machine.membership_list.active_nodes[host].heartbeat_increase_time = datetime.datetime.now()
 
                 self.SUSPICION_RECVD = False
                 print("*** GOSSIP Enabled ***\n")

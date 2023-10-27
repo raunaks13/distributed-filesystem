@@ -1,4 +1,4 @@
-from machine import Machine
+from client import Client
 import socket
 
 if __name__ == "__main__":
@@ -7,5 +7,5 @@ if __name__ == "__main__":
     print("HOST: ", host)
     machine_num = int(host.split('.')[0].split('-')[2][2:])
 
-    machine = Machine(machine_num)
+    machine = Client(machine_num)
     machine.start_machine()
