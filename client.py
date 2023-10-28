@@ -119,7 +119,7 @@ class Client:
                         )                      
 
         self.send_message(sock_fd, pickle.dumps(put_mssg))
-        print('Message sent')
+        print(f'Put Message sent to {modified_host}')
         data = sock_fd.recv(MAX)
         mssg = pickle.loads(data)
         sock_fd.close()
@@ -158,7 +158,7 @@ class Client:
         # Send filename message to the replicas
         self.send_message(sock_fd, pickle.dumps(sdfs_filename))
 
-        with open(local_filename, 'rb') as f:
+        with open(local_filename, 'wb') as f:
             bytes_read = sock_fd.recv(BUFFER_SIZE)
             while bytes_read:
                 if not bytes_read:
@@ -182,15 +182,15 @@ class Client:
         modified_host = (host[0], host[3] + BASE_FS_PORT, host[2], host[3])
         sock_fd.connect((modified_host[0], modified_host[1]))    
 
-        put_mssg = Message(msg_type="get", 
+        get_mssg = Message(msg_type="get", 
                         host=self.machine.nodeId,
                         membership_list=None,
                         counter=None,
                         filename=sdfs_filename,
                         )                      
 
-        self.send_message(sock_fd, pickle.dumps(put_mssg))
-        print('Message sent')
+        self.send_message(sock_fd, pickle.dumps(get_mssg))
+        print('Get Message sent')
         data = sock_fd.recv(MAX)
         mssg = pickle.loads(data)
         sock_fd.close()
@@ -200,7 +200,7 @@ class Client:
             sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             sock_fd.connect((mssg.kwargs['leader'][0], mssg.kwargs['leader'][1]))
-            self.send_message(sock_fd, pickle.dumps(put_mssg))
+            self.send_message(sock_fd, pickle.dumps(get_mssg))
             
             data = sock_fd.recv(MAX)
             mssg = pickle.loads(data)
@@ -218,6 +218,79 @@ class Client:
 
         elif mssg.type == "NACK":
             print("[ACK not Received] File not found in SDFS\n")
+    
+    
+
+    def delete_replicas(self, mssg, sdfs_filename):
+        replica_servers = mssg.kwargs['replica']
+        ack_count = 0
+        for replica in replica_servers:
+            sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock_fd.connect((replica[0], replica[1])) 
+
+            # Send filename message to the replicas
+            self.send_message(sock_fd, pickle.dumps(sdfs_filename))
+            data = sock_fd.recv(MAX)
+
+            if pickle.loads(data) == "ACK":
+                ack_count += 1
+
+            sock_fd.close()
+        
+        if ack_count >= WRITE_QUORUM:
+            print("[ACK Received] Deleted file successfully\n")
+        else:
+            print("[ACK Not Received] Deleted file unsuccessfully\n")
+    
+
+
+    def delete(self, sdfs_filename):
+        ''' Delete a file from the SDFS '''
+        sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
+        host = list(self.machine.membership_list.active_nodes.keys())[0]
+        modified_host = (host[0], host[3] + BASE_FS_PORT, host[2], host[3])
+        sock_fd.connect((modified_host[0], modified_host[1])) 
+
+        delete_mssg = Message(msg_type="delete", 
+                        host=self.machine.nodeId,
+                        membership_list=None,
+                        counter=None,
+                        filename=sdfs_filename,
+                        )                      
+
+        self.send_message(sock_fd, pickle.dumps(delete_mssg))
+        print('Delete Message sent')
+        data = sock_fd.recv(MAX)
+        mssg = pickle.loads(data)
+        sock_fd.close()
+
+        if mssg.type == "leader":
+            print("Leader is: ", mssg.kwargs['leader'])
+            sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock_fd.connect((mssg.kwargs['leader'][0], mssg.kwargs['leader'][1]))
+            self.send_message(sock_fd, pickle.dumps(delete_mssg))
+            
+            data = sock_fd.recv(MAX)
+            mssg = pickle.loads(data)
+            sock_fd.close()
+
+            if mssg.type == "replica":
+                print("Replica Servers: ", mssg.kwargs['replica'])
+                self.delete_replicas(mssg, sdfs_filename)
+            else:
+                print("Unseccessful Attempt")
+
+        elif mssg.type == "replica":
+            print("Replica Servers: ", mssg.kwargs['replica'])
+            self.delete_replicas(mssg, sdfs_filename)  
+
+        elif mssg.type == "NACK":
+            print("[ACK not Received] File not found in SDFS\n")
+
 
 
     def client(self):
@@ -250,6 +323,7 @@ class Client:
 
             elif inp.startswith("delete"):
                 _, sdfs_filename = inp.split(' ')
+                self.delete(sdfs_filename)
             
             elif inp.startswith("ls"):
                 _, sdfs_filename = inp.split(' ')

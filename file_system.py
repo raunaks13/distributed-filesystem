@@ -18,6 +18,7 @@ BASE_PORT = 8000
 BASE_FS_PORT = 9000
 BASE_WRITE_PORT = 10000
 BASE_READ_PORT = 11000
+BASE_DELETE_PORT = 12000
 BASE_FS_PING_PORT = 12000
 REPLICATION_FACTOR = 1
 WRITE_QUORUM = 3
@@ -36,6 +37,7 @@ class File_System:
         self.port = BASE_FS_PORT + MACHINE_NUM
         self.write_port = BASE_WRITE_PORT + MACHINE_NUM
         self.read_port = BASE_READ_PORT + MACHINE_NUM
+        self.delete_port = BASE_DELETE_PORT + MACHINE_NUM
         self.fs_ping_port = BASE_FS_PING_PORT + MACHINE_NUM
         self.hostname = "fa23-cs425-37" + f"{MACHINE_NUM:02d}" + ".cs.illinois.edu"
         self.ip = socket.gethostbyname(self.hostname)
@@ -94,7 +96,7 @@ class File_System:
                     sock_fd.listen(5)
 
                     while self.machine.nodeId[3] == self.leader_node[3]:
-                        print('File Replication Dict:', self.machine.membership_list.file_replication_dict)
+                        self.machine.logger(f"File Replication Dict: {self.machine.membership_list.file_replication_dict}")
 
                         conn, addr = sock_fd.accept()
                         try:
@@ -309,7 +311,7 @@ class File_System:
                 
 
         elif mssg_type == 'get':
-            # For Read messaged
+            # For Read messages
             if sdfs_filename not in self.machine.membership_list.file_replication_dict:
                 replica_servers = []
             else:
@@ -318,6 +320,17 @@ class File_System:
                 replica_servers = [(server[0], server[1] - BASE_PORT + BASE_READ_PORT, server[2], server[3]) for server in replica_servers]
 
                 # ret = self.read_replica(sdfs_filename, replica_servers[0:READ_QUORUM])
+        
+
+        elif mssg_type == 'delete':
+            # For Delete messages
+            if sdfs_filename not in self.machine.membership_list.file_replication_dict:
+                replica_servers = []
+            else:
+                replica_servers = self.machine.membership_list.file_replication_dict[sdfs_filename]
+                replica_servers = [(server[0], server[1] - BASE_PORT + BASE_DELETE_PORT, server[2], server[3]) for server in replica_servers]
+
+                # ret = self.delete_replica(sdfs_filename, replica_servers[0:WRITE_QUORUM])
 
         return replica_servers
 
@@ -340,7 +353,7 @@ class File_System:
                 mssg = pickle.loads(data)
                 print(mssg.type, self.machine.nodeId)
 
-                if self.machine.nodeId[3] == self.leader_node[3]:
+                if self.machine.nodeId[3] != self.leader_node[3]:
                     # If not leader, ask client to send to leader
                     print("Message received at non-leader")
                     mssg = Message(msg_type='leader',
@@ -384,6 +397,26 @@ class File_System:
                                                 )
                                 self.send_message(conn, pickle.dumps(mssg))
 
+                    elif mssg.type == 'delete':
+                        if self.machine.nodeId[3] == self.leader_node[3]:
+                            replicas = self.leader_work(mssg.type, mssg.kwargs['filename'])
+                            if len(replicas) == 0:
+                                mssg = Message(msg_type='NACK',
+                                                host=self.machine.nodeId,
+                                                membership_list=None,
+                                                counter=None,
+                                                replica=None
+                                                )
+                                self.send_message(conn, pickle.dumps(mssg))
+                            else:
+                                mssg = Message(msg_type='replica',
+                                                host=self.machine.nodeId,
+                                                membership_list=None,
+                                                counter=None,
+                                                replica=replicas
+                                                )
+                                self.send_message(conn, pickle.dumps(mssg))
+
             finally:
                 conn.close()
 
@@ -394,6 +427,7 @@ class File_System:
         receive_thread = threading.Thread(target=self.receive)
         receive_writes_thread = threading.Thread(target=self.receive_writes)
         receive_reads_thread = threading.Thread(target=self.receive_reads)
+        receive_deletes_thread = threading.Thread(target=self.receive_deletes)
         filestore_ping_thread = threading.Thread(target=self.filestore_ping)
         filestore_ping_recv_thread = threading.Thread(target=self.filestore_ping_recv)
 
@@ -401,6 +435,7 @@ class File_System:
         receive_thread.start()
         receive_writes_thread.start()
         receive_reads_thread.start()
+        receive_deletes_thread.start()
         filestore_ping_thread.start()
         filestore_ping_recv_thread.start()
     
