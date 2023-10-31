@@ -205,6 +205,7 @@ class Failure_Detector:
                                 with self.membership_mutex:
                                     self.machine.membership_list.cleanup_status_dict[host]["flag"] = 1
                                     self.machine.membership_list.cleanup_status_dict[host]["cleanup_start_time"] = time_now
+                                    self.machine.membership_list.failed_nodes.append(host)
 
                                 print(f'Node {host[0]}:{host[1]} has been failed {datetime.datetime.now()} \n')
                                 self.machine.logger.debug(f'Node {host} has been failed')
@@ -219,6 +220,7 @@ class Failure_Detector:
                             with self.membership_mutex:
                                 self.machine.membership_list.cleanup_status_dict[host]["flag"] = 1
                                 self.machine.membership_list.cleanup_status_dict[host]["cleanup_start_time"] = time_now
+                                self.machine.membership_list.failed_nodes.append(host)
 
                             print(f'Node {host[0]}:{host[1]} has been failed at {datetime.datetime.now()} \n')
                             self.machine.logger.debug(f'Node {host} has been failed')

@@ -19,7 +19,8 @@ BASE_FS_PORT = 9000
 BASE_WRITE_PORT = 10000
 BASE_READ_PORT = 11000
 BASE_DELETE_PORT = 12000
-BASE_FS_PING_PORT = 12000
+BASE_FS_PING_PORT = 13000
+BASE_REREPLICATION_PORT = 14000
 REPLICATION_FACTOR = 1
 WRITE_QUORUM = 3
 READ_QUORUM = 1
@@ -39,6 +40,7 @@ class File_System:
         self.read_port = BASE_READ_PORT + MACHINE_NUM
         self.delete_port = BASE_DELETE_PORT + MACHINE_NUM
         self.fs_ping_port = BASE_FS_PING_PORT + MACHINE_NUM
+        self.rereplication_port = BASE_REREPLICATION_PORT + MACHINE_NUM
         self.hostname = "fa23-cs425-37" + f"{MACHINE_NUM:02d}" + ".cs.illinois.edu"
         self.ip = socket.gethostbyname(self.hostname)
         self.machine = MACHINE
@@ -103,47 +105,173 @@ class File_System:
                             data = conn.recv(MAX)   # receive serialized data from another machine
                             mssg = pickle.loads(data)
 
-                            if mssg.type == 'ping':
-                                file_list = mssg.kwargs['replica_list']
-                                for file in file_list:
-                                    if file not in self.machine.membership_list.file_replication_dict:
-                                        self.machine.membership_list.file_replication_dict[file] = {mssg.host}
-                                    else:
-                                        self.machine.membership_list.file_replication_dict[file].add(mssg.host)
+                            if mssg.type == 'write_ping':
+                                file = mssg.kwargs['replica']
+                                if file not in self.machine.membership_list.file_replication_dict:
+                                    self.machine.membership_list.file_replication_dict[file] = {mssg.host}
+                                else:
+                                    self.machine.membership_list.file_replication_dict[file].add(mssg.host)
+                            
+                            elif mssg.type == 'delete_ping':
+                                file = mssg.kwargs['replica']
+                                if file in self.machine.membership_list.file_replication_dict:
+                                    self.machine.membership_list.file_replication_dict[file].remove(mssg.host)
+
                         except Exception as e:
-                            print(e)
-                            pass
+                            self.machine.logger.error(f"Error in receiving filestore ping: {e}")
+
                         finally:
                             conn.close()
                     sock_fd.close()
 
+    
 
-    def filestore_ping(self):
+    def filestore_ping(self, op_type, replica):
         ''' Send a ping message to leader about the replicas stored '''
+        sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock_fd.connect((self.leader_node[0], BASE_FS_PING_PORT  + self.leader_node[3])) 
+
+        if op_type == 'w':
+            msg_type = 'write_ping'
+        elif op_type == 'r':
+            msg_type = 'read_ping'
+        elif op_type == 'd':
+            msg_type = 'delete_ping'
+        else:
+            msg_type = None
+
+        msg = Message(msg_type=msg_type, 
+                    host=self.machine.nodeId, 
+                    membership_list=None, 
+                    counter=None,
+                    replica=replica
+                    )
+        self.send_message(sock_fd, pickle.dumps(msg))
+        sock_fd.close()
+
+
+
+    def rereplication_leader(self):
+        ''' Re-replicate the files stored in the failed node '''
         while True:
             if self.machine.status == "Joined":
-                try:
-                    sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                    sock_fd.connect((self.leader_node[0], BASE_FS_PING_PORT  + self.leader_node[3])) 
+                if self.machine.nodeId[3] == self.leader_node[3]:
+                    if len(self.machine.membership_list.failed_nodes) > 0:
+                        node = self.machine.membership_list.failed_nodes[0]
 
-                    replica_list = []
-                    for file in os.listdir(HOME_DIR):
-                        replica_list.append(file)
+                        replica_rereplication = self.machine.membership_list.file_replication_dict[node]
 
-                    msg = Message(msg_type='ping', 
-                                host=self.machine.nodeId, 
-                                membership_list=None, 
-                                counter=None,
-                                replica_list=replica_list
-                                )
-                    self.send_message(sock_fd, pickle.dumps(msg))
-                    sock_fd.close()
-                except Exception as e:
-                    print(e)
-                    pass
+                        for filename in replica_rereplication:
+                            alive_replica_node = None
+                            new_replica_node = None
+                            # Find the new node where the replica will be stored
+                            while True:
+                                new_replica_node = random.sample(self.machine.membership_list.active_nodes.keys(), 1)
+                                replica_nodes = self.machine.membership_list.file_replication_dict[filename]
+                                if new_replica_node not in replica_nodes:
+                                    break
 
-            time.sleep(2)
+                            # Find a node from where the content will be copied to the new node
+                            for n,r in self.machine.membership_list.file_replication_dict.items():
+                                if filename in r:
+                                    alive_replica_node = n
+                                    break
+                            
+                            sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                            sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                            sock_fd.connect((alive_replica_node[0], BASE_REREPLICATION_PORT  + alive_replica_node[3]))
+
+                            mssg = Message(msg_type='put_replica',
+                                            host=self.machine.nodeId,
+                                            membership_list=None,
+                                            counter=None,
+                                            filename=filename,
+                                            replica_node=new_replica_node
+                                            )
+                            self.send_message(sock_fd, pickle.dumps(mssg))
+                            # Wait for ACK
+                            data = sock_fd.recv(MAX)
+                            mssg = pickle.loads(data)
+                            sock_fd.close()
+
+                            if mssg.type == "ACK":
+                                self.machine.membership_list.file_replication_dict[filename].add(replica_node)
+                                self.machine.membership_list.failed_nodes.pop(0)
+                            else:
+                                # TODO: What if rereplication failed, what to do?
+                                pass
+
+
+
+    def write_replicas(self, filename, replica):
+        sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock_fd.connect((replica[0], replica_node[3] + BASE_WRITE_POR)) 
+
+        # Send filename message to the replicas
+        self.send_message(sock_fd, pickle.dumps(sdfs_filename))
+        data = sock_fd.recv(MAX)
+        # If file is opened, send the file content
+        if "ACK" == pickle.loads(data):
+
+            with open(os.path.join(HOME_DIR, filename), 'rb') as f:
+                bytes_read = f.read()
+                if not bytes_read:
+                    break
+
+                while bytes_read:
+                    self.send_message(sock_fd, bytes_read)
+                    bytes_read = f.read()
+            
+            sock_fd.shutdown(socket.SHUT_WR)
+            data = sock_fd.recv(MAX)
+            mssg = pickle.loads(data)
+            sock_fd.close()
+
+            if mssg.type == "ACK":
+                return 1
+
+        return 0
+
+
+    def rereplication_follower(self):
+        ''' Receive the message from leader to re-replicate the files stored in the failed node '''
+        sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
+        sock_fd.bind((self.ip, self.rereplication_port))
+        sock_fd.listen(5)
+
+        while True:
+            if self.machine.status == "Joined":
+                if self.machine.nodeId[3] != self.leader_node[3]:
+                    conn, addr = sock_fd.accept()
+                    try:
+                        data = conn.recv(MAX)   # receive serialized data from another machine
+                        mssg = pickle.loads(data)
+
+                        if mssg.type == 'put_replica':
+                            filename = mssg.kwargs['filename']
+                            replica_node = mssg.kwargs['replica_node']
+                            ret = self.write_replicas(filename, replica_node)
+                            if ret == 1:
+                                mssg = Message(msg_type='ACK',
+                                                host=self.machine.nodeId,
+                                                membership_list=None,
+                                                counter=None
+                                                )
+                                self.send_message(conn, pickle.dumps(mssg))
+                            else:
+                                mssg = Message(msg_type='NACK',
+                                                host=self.machine.nodeId,
+                                                membership_list=None,
+                                                counter=None
+                                                )
+                                self.send_message(conn, pickle.dumps(mssg))
+                    finally:
+                        conn.close()
+
 
 
     def receive_writes(self):
@@ -183,6 +311,7 @@ class File_System:
                 print("File received")
                 f.close()
 
+                self.filestore_ping('w', filename)
                 mssg = Message(msg_type='ACK',
                                 host=self.machine.nodeId,
                                 membership_list=None,
@@ -286,6 +415,36 @@ class File_System:
 
         return 0
     """
+
+
+    def receive_deletes(self):
+        sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
+        sock_fd.bind((self.ip, self.read_port))
+        sock_fd.listen(5)
+
+        while True:
+            conn, addr = sock_fd.accept()
+            try:
+                # Receive Filename and open the file. If file exists, ACK
+                data = conn.recv(MAX)
+                print(f"Filename received: {pickle.loads(data)}")
+                filename = pickle.loads(data)
+
+                os.remove(os.path.join(HOME_DIR, filename))
+
+                self.filestore_ping('d', filename)
+                mssg = Message(msg_type='ACK',
+                                host=self.machine.nodeId,
+                                membership_list=None,
+                                counter=None,
+                              )
+                self.send_message(conn, pickle.dumps(mssg))
+                
+            finally:
+                conn.close()
+
 
  
     def leader_work(self, mssg_type, sdfs_filename):
@@ -428,16 +587,18 @@ class File_System:
         receive_writes_thread = threading.Thread(target=self.receive_writes)
         receive_reads_thread = threading.Thread(target=self.receive_reads)
         receive_deletes_thread = threading.Thread(target=self.receive_deletes)
-        filestore_ping_thread = threading.Thread(target=self.filestore_ping)
         filestore_ping_recv_thread = threading.Thread(target=self.filestore_ping_recv)
+        rereplication_leader_thread = threading.Thread(target=self.rereplication_leader)
+        rereplication_follower_thread = threading.Thread(target=self.rereplication_follower)
 
         leader_election_thread.start()
         receive_thread.start()
         receive_writes_thread.start()
         receive_reads_thread.start()
         receive_deletes_thread.start()
-        filestore_ping_thread.start()
         filestore_ping_recv_thread.start()
+        rereplication_leader_thread.start()
+        rereplication_follower_thread.start()
     
 
 
