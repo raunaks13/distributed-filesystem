@@ -60,6 +60,7 @@ class Failure_Detector:
                                         membership_counter=membership_counter, 
                                         suspicion={"flag":0, "start_time":None}
                                         )
+        
 
         self.machine.logger.info('Join: IP {}, Port: {}, Version: {}'.format(host[0], host[1], host[2]))
         for khost,v in self.machine.membership_list.active_nodes.items():

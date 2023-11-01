@@ -28,8 +28,8 @@ def project_sync(hosts):
 def setup(rsync_hosts, pssh_hosts):
     for host in rsync_hosts:
         # os.system("rsync /Users/sc134/OneDrive - University of Illinois - Urbana/Distributed_Systems/cs-425-mp2 sc134@" + host + ":/home/sc134/")
-        os.system("rsync -r /home/sc134/cs-425-mp3 sc134@" + host + ":/home/sc134/")
-        # os.system("rsync -r /home/raunaks3/cs-425-mp3 raunaks3@" + host + ":/home/raunaks3/")
+        # os.system("rsync -r /home/sc134/cs-425-mp3 sc134@" + host + ":/home/sc134/")
+        os.system("rsync -r /home/raunaks3/cs-425-mp3 raunaks3@" + host + ":/home/raunaks3/")
 
 
     # run(pssh_hosts, "python3 main.py &")
@@ -40,7 +40,7 @@ def setup(rsync_hosts, pssh_hosts):
 rsync_hosts = [
         # "fa23-cs425-3701.cs.illinois.edu",
          "fa23-cs425-3702.cs.illinois.edu",
-        #  "fa23-cs425-3703.cs.illinois.edu",
+         "fa23-cs425-3703.cs.illinois.edu",
         #  "fa23-cs425-3704.cs.illinois.edu",
         #  "fa23-cs425-3705.cs.illinois.edu",
         #  "fa23-cs425-3706.cs.illinois.edu",

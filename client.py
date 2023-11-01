@@ -20,6 +20,7 @@ INIT_STATUS = 'Not Joined'  # Initial status of a node
 BASE_FS_PORT = 9000
 BASE_PORT = 8000
 WRITE_QUORUM = 1
+REPLICATION_FACTOR = 2
 
 BUFFER_SIZE = 4096
 
@@ -107,7 +108,8 @@ class Client:
         sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
-        host = list(self.machine.membership_list.active_nodes.keys())[0]
+        # host = list(self.machine.membership_list.active_nodes.keys())[0]
+        host = self.machine.nodeId
         modified_host = (host[0], host[3] + BASE_FS_PORT, host[2], host[3])
         sock_fd.connect((modified_host[0], modified_host[1]))    
 
@@ -130,16 +132,17 @@ class Client:
             sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             sock_fd.connect((mssg.kwargs['leader'][0], mssg.kwargs['leader'][1]))
             self.send_message(sock_fd, pickle.dumps(put_mssg))
-            
+
             data = sock_fd.recv(MAX)
             mssg = pickle.loads(data)
             sock_fd.close()
+            print(mssg.type, mssg.host, mssg.kwargs)
 
             if mssg.type == "replica":
                 print("Replica Servers: ", mssg.kwargs['replica'])
                 self.write_replicas(mssg, local_filename, sdfs_filename)
             else:
-                print("Unseccessful Attempt\n")
+                print("Unsucceessful Attempt\n")
 
         elif mssg.type == "replica":
             print("Replica Servers: ", mssg.kwargs['replica'])
@@ -148,12 +151,16 @@ class Client:
             print("Unsuccessful Attempt\n")          
 
 
-
     def read_replicas(self, mssg, sdfs_filename, local_filename):
-        replica = mssg.kwargs['replica']
-        sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        sock_fd.connect((replica[0], replica[1])) 
+        replicas = mssg.kwargs['replicas']
+        for replica in replicas:
+            try:
+                sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                sock_fd.connect((replica[0], replica[1]))
+                break 
+            except:
+                continue
 
         # Send filename message to the replicas
         self.send_message(sock_fd, pickle.dumps(sdfs_filename))
@@ -178,7 +185,8 @@ class Client:
         sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
-        host = list(self.machine.membership_list.active_nodes.keys())[0]
+        # host = list(self.machine.membership_list.active_nodes.keys())[0]
+        host = self.machine.nodeId
         modified_host = (host[0], host[3] + BASE_FS_PORT, host[2], host[3])
         sock_fd.connect((modified_host[0], modified_host[1]))    
 
@@ -187,7 +195,7 @@ class Client:
                         membership_list=None,
                         counter=None,
                         filename=sdfs_filename,
-                        )                      
+                        )
 
         self.send_message(sock_fd, pickle.dumps(get_mssg))
         print('Get Message sent')
@@ -207,13 +215,13 @@ class Client:
             sock_fd.close()
 
             if mssg.type == "replica":
-                print("Replica Servers: ", mssg.kwargs['replica'])
+                print("Replica Servers: ", mssg.kwargs['replicas'])
                 self.read_replicas(mssg, sdfs_filename, local_filename)
             else:
-                print("Unseccessful Attempt")
+                print("Unsuccessful Attempt")
 
         elif mssg.type == "replica":
-            print("Replica Servers: ", mssg.kwargs['replica'])
+            print("Replica Servers: ", mssg.kwargs['replicas'])
             self.read_replicas(mssg, sdfs_filename, local_filename)  
 
         elif mssg.type == "NACK":
@@ -232,13 +240,14 @@ class Client:
             # Send filename message to the replicas
             self.send_message(sock_fd, pickle.dumps(sdfs_filename))
             data = sock_fd.recv(MAX)
+            msg = pickle.loads(data)
 
-            if pickle.loads(data) == "ACK":
+            if msg.type == "ACK":
                 ack_count += 1
 
             sock_fd.close()
         
-        if ack_count >= WRITE_QUORUM:
+        if ack_count == REPLICATION_FACTOR:
             print("[ACK Received] Deleted file successfully\n")
         else:
             print("[ACK Not Received] Deleted file unsuccessfully\n")
@@ -250,7 +259,8 @@ class Client:
         sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
-        host = list(self.machine.membership_list.active_nodes.keys())[0]
+        # host = list(self.machine.membership_list.active_nodes.keys())[0]
+        host = self.machine.nodeId
         modified_host = (host[0], host[3] + BASE_FS_PORT, host[2], host[3])
         sock_fd.connect((modified_host[0], modified_host[1])) 
 
@@ -282,7 +292,7 @@ class Client:
                 print("Replica Servers: ", mssg.kwargs['replica'])
                 self.delete_replicas(mssg, sdfs_filename)
             else:
-                print("Unseccessful Attempt")
+                print("Unsuccessful Attempt")
 
         elif mssg.type == "replica":
             print("Replica Servers: ", mssg.kwargs['replica'])
@@ -325,8 +335,21 @@ class Client:
                 _, sdfs_filename = inp.split(' ')
                 self.delete(sdfs_filename)
             
-            elif inp.startswith("ls"):
+            elif inp.startswith("ls"): # list all machines where file is being stored
                 _, sdfs_filename = inp.split(' ')
+                self.file_system.ls_sdfsfilename(sdfs_filename)
+            
+            elif inp == "store": # list all files being stored in current machine
+                self.file_system.store("./DS")
+                # files_list = os.listdir("./DS")
+                # print(files_list)
+            
+            elif inp == "list_replica_dict":
+                self.file_system.list_replica_dict()
+
+            elif inp == "list_failed_nodes":
+                self.file_system.list_failed_nodes()
+
 
 
     def start_machine(self):
