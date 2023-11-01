@@ -49,7 +49,10 @@ class File_System:
 
         self.leader_node = None
 
-        shutil.rmtree(HOME_DIR)
+        try:
+            shutil.rmtree(HOME_DIR)
+        except:
+            pass
         os.mkdir(HOME_DIR)
 
 
@@ -78,9 +81,29 @@ class File_System:
         print(self.machine.membership_list.failed_nodes)
         print("\n")
 
-    
+
     def ls_sdfsfilename(self, sdfsfilename):
-        print(self.machine.membership_list.file_replication_dict[sdfsfilename])
+        sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock_fd.connect((self.leader_node[0], BASE_FS_PORT  + self.leader_node[3]))
+
+        mssg = Message(msg_type='ls',
+                        host=self.machine.nodeId,
+                        membership_list=None,
+                        counter=None,
+                        sdfsfilename=sdfsfilename
+                        )
+        self.send_message(sock_fd, pickle.dumps(mssg))
+        data = sock_fd.recv(MAX)
+        mssg = pickle.loads(data)
+        sock_fd.close()
+
+        if mssg.type == "replica":
+            print("------Replicas:------")
+            for replica in mssg.kwargs['replica']:
+                print(f"Machine Num: {replica[3]}, IP: {replica[0]}")
+        else:
+            print("File not found")
         print("\n")
 
 
@@ -499,17 +522,11 @@ class File_System:
                 replica_servers = random.sample(servers, REPLICATION_FACTOR)
                 replica_servers = [(server[0], server[1] - BASE_PORT + BASE_WRITE_PORT, server[2], server[3]) for server in replica_servers]
                 print("Leader computing replica servers 1...", replica_servers)
-                # ret = self.write_replicas(sdfs_filename, content, replica_servers)
-                # if ret == 1:
-                #     self.machine.membership_list.file_replication_dict[sdfs_filename] = replica_servers
 
             else:
                 replica_servers = self.machine.membership_list.file_replication_dict[sdfs_filename]
                 replica_servers = [(server[0], server[1] - BASE_PORT + BASE_WRITE_PORT, server[2], server[3]) for server in replica_servers]
-                print("Leader computing replica servers 2...", replica_servers)
-
-                # ret = self.write_replicas(sdfs_filename, content, replica_servers)
-                
+                print("Leader computing replica servers 2...", replica_servers)                
 
         elif mssg_type == 'get':
             # For Read messages
@@ -519,10 +536,7 @@ class File_System:
                 # Use the replication servers from the membership list
                 replica_servers = self.machine.membership_list.file_replication_dict[sdfs_filename]
                 replica_servers = [(server[0], server[1] - BASE_PORT + BASE_READ_PORT, server[2], server[3]) for server in replica_servers]
-
-                # ret = self.read_replica(sdfs_filename, replica_servers[0:READ_QUORUM])
         
-
         elif mssg_type == 'delete':
             # For Delete messages
             if sdfs_filename not in self.machine.membership_list.file_replication_dict:
@@ -531,8 +545,13 @@ class File_System:
                 replica_servers = self.machine.membership_list.file_replication_dict[sdfs_filename]
                 replica_servers = [(server[0], server[1] - BASE_PORT + BASE_DELETE_PORT, server[2], server[3]) for server in replica_servers]
 
-                # ret = self.delete_replica(sdfs_filename, replica_servers[0:WRITE_QUORUM])
-
+        elif mssg_type == 'ls':
+            # For ls messages
+            if sdfs_filename not in self.machine.membership_list.file_replication_dict:
+                replica_servers = []
+            else:
+                replica_servers = self.machine.membership_list.file_replication_dict[sdfs_filename]
+        
         return replica_servers
 
 
@@ -602,6 +621,26 @@ class File_System:
                     elif mssg.type == 'delete':
                         if self.machine.nodeId[3] == self.leader_node[3]:
                             replicas = self.leader_work(mssg.type, mssg.kwargs['filename'])
+                            if len(replicas) == 0:
+                                mssg = Message(msg_type='NACK',
+                                                host=self.machine.nodeId,
+                                                membership_list=None,
+                                                counter=None,
+                                                replica=None
+                                                )
+                                self.send_message(conn, pickle.dumps(mssg))
+                            else:
+                                mssg = Message(msg_type='replica',
+                                                host=self.machine.nodeId,
+                                                membership_list=None,
+                                                counter=None,
+                                                replica=replicas
+                                                )
+                                self.send_message(conn, pickle.dumps(mssg))
+
+                    elif mssg.type == 'ls':
+                        if self.machine.nodeId[3] == self.leader_node[3]:
+                            replicas = self.leader_work(mssg.type, mssg.kwargs['sdfsfilename'])
                             if len(replicas) == 0:
                                 mssg = Message(msg_type='NACK',
                                                 host=self.machine.nodeId,
