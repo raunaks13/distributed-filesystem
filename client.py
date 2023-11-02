@@ -102,7 +102,7 @@ class Client:
             print("[ACK Not Received] Put file unsuccessfully\n")            
 
 
-
+    
     def put(self, local_filename, sdfs_filename):
         ''' Put a file in the SDFS '''
         sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -228,6 +228,40 @@ class Client:
             print("[ACK not Received] File not found in SDFS\n")
     
     
+    def multiread(self, sdfs_filename, local_filename, machines):
+        leader_node = self.file_system.get_leader_node()
+
+        sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock_fd.connect((leader_node[0], leader_node[1]))
+
+        mssg = Message(msg_type="multiread",
+                        host=self.machine.nodeId,
+                       membership_list=None,
+                        counter=None,
+                        sdfs_filename=sdfs_filename,
+                        local_filename=local_filename,
+                        machines=machines,
+                        )
+        self.send_message(sock_fd, pickle.dumps(mssg))
+        print('Multiread Message sent to Leader')
+
+        machine_nums = [int(machine[2:]) for machine in machines]
+        if self.machine.nodeId[3] in machine_nums:
+            data = sock_fd.recv(MAX)
+            mssg = pickle.loads(data)
+            sock_fd.close()
+
+            if mssg.type == "replica":
+                print("Replica Servers: ", mssg.kwargs['replicas'])
+                self.read_replicas(mssg, sdfs_filename, local_filename)
+            else:
+                print("Unsuccessful Attempt")
+
+        else:
+            sock_fd.close()
+
+
 
     def delete_replicas(self, mssg, sdfs_filename):
         replica_servers = mssg.kwargs['replica']
@@ -330,6 +364,13 @@ class Client:
             elif inp.startswith("get"):
                 _, sdfs_filename, local_filename = inp.split(' ')
                 self.get(sdfs_filename, local_filename)
+
+            elif inp.startswith("multiread"):
+                tokens = inp.split(' ')
+                sdfs_filename = tokens[1]
+                local_filename = tokens[2]
+                machines = tokens[3:]
+                self.multiread(sdfs_filename, local_filename, machines)
 
             elif inp.startswith("delete"):
                 _, sdfs_filename = inp.split(' ')

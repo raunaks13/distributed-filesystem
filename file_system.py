@@ -70,6 +70,7 @@ class File_System:
             if os.path.isfile(path):
                 size = os.path.getsize(path)
                 print(f"File: {filename}, Size: {size} bytes")
+        print("\n")
 
 
     def list_replica_dict(self):
@@ -105,6 +106,10 @@ class File_System:
         else:
             print("File not found")
         print("\n")
+
+
+    def get_leader_node(self):
+        return self.leader_node
 
 
     def leader_election(self, sock_fd=None):
@@ -199,7 +204,6 @@ class File_System:
         sock_fd.close()
 
 
-
     def rereplication_leader(self):
         ''' Re-replicate the files stored in the failed node '''
         while True:
@@ -255,11 +259,12 @@ class File_System:
 
                             if mssg.type == "ACK":
                                 self.machine.membership_list.file_replication_dict[filename].add(new_replica_node)
-                                self.machine.membership_list.failed_nodes.pop(0)
                                 self.machine.membership_list.file_replication_dict[filename].remove(node)
                             else:
                                 # TODO: What if rereplication failed, what to do?
                                 pass
+
+                        self.machine.membership_list.failed_nodes.pop(0)
 
 
 
@@ -335,7 +340,6 @@ class File_System:
                     conn.close()
 
 
-
     def receive_writes(self):
         # TODO: Lock a file
         # TODO:How to enable multiple writes to different files if the conn is established
@@ -386,37 +390,6 @@ class File_System:
                 conn.close()
 
 
-    """
-    def write_replicas(self, sdfs_filename, content, replica_servers):
-        ''' Send the file name and the file content to the replica servers '''
-        # TODO: Parallelize this code
-
-        ack_count = 0
-        for replica in replica_servers:
-            sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            sock_fd.connect((replica[0], replica[1]))
-
-            # Send filename message to the replicas
-            self.send_message(sock_fd, pickle.dumps(sdfs_filename))
-            data = sock_fd.recv(MAX)
-            print(pickle.loads(data))
-            # If file is opened, send the file content
-            if "ACK" == pickle.loads(data):
-                sock_fd.sendall( pickle.dumps(content) )
-                data = sock_fd.recv(MAX)
-                if "ACK" == pickle.loads(data):
-                    ack_count += 1
-
-            sock_fd.close()
-
-        if ack_count >= WRITE_QUORUM:
-            return 1
-        
-        return 0
-    """
-
-
     def receive_reads(self):
         sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -446,39 +419,6 @@ class File_System:
             finally:
                 conn.close()
         
-
-    """
-    def read_replica(self, sdfs_filename, replica_servers):
-        ack_count == 0
-        file_content = None
-
-        for replica in replica_servers:
-            sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            sock_fd.connect((replica[0], replica[1]))
-
-            # Send filename message to the replicas
-            self.send_message(sock_fd, pickle.dumps(sdfs_filename))
-
-            # Receive the file contents
-            data = None
-            while True:
-                data = sock_fd.recv(MAX)
-                if not data:
-                    break
-
-            content = pickle.loads(data)
-            if content != "NACK":
-                ack_count += 1
-            else:
-                file_content = content
-
-        if ack_count >= READ_QUORUM:
-            return file_content
-
-        return 0
-    """
-
 
     def receive_deletes(self):
         sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -510,7 +450,34 @@ class File_System:
                 conn.close()
 
 
- 
+    def read_replicas(self, sdfs_filename, local_filename, replicas):
+        for replica in replicas:
+            try:
+                sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                sock_fd.connect((replica[0], replica[1]))
+                break 
+            except:
+                continue
+
+        # Send filename message to the replicas
+        self.send_message(sock_fd, pickle.dumps(sdfs_filename))
+
+        with open(local_filename, 'wb') as f:
+            bytes_read = sock_fd.recv(BUFFER_SIZE)
+            while bytes_read:
+                if not bytes_read:
+                    break
+                else:
+                    # write to the file the bytes we just received
+                    f.write(bytes_read)
+                    bytes_read = sock_fd.recv(BUFFER_SIZE)
+        
+        sock_fd.close()
+
+        print("[ACK Received] Get file successfully\n")
+
+
     def leader_work(self, mssg_type, sdfs_filename):
         ''' Leader should process messages about reads/writes/deletes '''
 
@@ -521,14 +488,11 @@ class File_System:
                 servers = self.machine.membership_list.active_nodes.keys()
                 replica_servers = random.sample(servers, REPLICATION_FACTOR)
                 replica_servers = [(server[0], server[1] - BASE_PORT + BASE_WRITE_PORT, server[2], server[3]) for server in replica_servers]
-                print("Leader computing replica servers 1...", replica_servers)
-
             else:
                 replica_servers = self.machine.membership_list.file_replication_dict[sdfs_filename]
-                replica_servers = [(server[0], server[1] - BASE_PORT + BASE_WRITE_PORT, server[2], server[3]) for server in replica_servers]
-                print("Leader computing replica servers 2...", replica_servers)                
+                replica_servers = [(server[0], server[1] - BASE_PORT + BASE_WRITE_PORT, server[2], server[3]) for server in replica_servers]              
 
-        elif mssg_type == 'get':
+        elif (mssg_type == 'get' or mssg_type == 'multiread'):
             # For Read messages
             if sdfs_filename not in self.machine.membership_list.file_replication_dict:
                 replica_servers = []
@@ -570,8 +534,12 @@ class File_System:
 
             try:
                 data = conn.recv(MAX) # receive serialized data from another machine
-                mssg = pickle.loads(data)
-                print(mssg.type, self.machine.nodeId)
+                recv_mssg = pickle.loads(data)
+
+                if recv_mssg.type == 'multiread_get':
+                    if os.fork() == 0:
+                        self.read_replicas(recv_mssg.kwargs['sdfs_filename'], recv_mssg.kwargs['local_filename'], recv_mssg.kwargs['replicas'])
+                        
 
                 if self.machine.nodeId[3] != self.leader_node[3]:
                     # If not leader, ask client to send to leader
@@ -585,10 +553,10 @@ class File_System:
                     self.send_message(conn, pickle.dumps(mssg))  
 
                 else:
-                    if mssg.type == 'put':
+                    if recv_mssg.type == 'put':
                         if self.machine.nodeId[3] == self.leader_node[3]:
                             print("Put message received at leader")
-                            replicas = self.leader_work(mssg.type, mssg.kwargs['filename'])
+                            replicas = self.leader_work(recv_mssg.type, recv_mssg.kwargs['filename'])
                             mssg = Message(msg_type='replica',
                                             host=self.machine.nodeId,
                                             membership_list=None,
@@ -598,15 +566,15 @@ class File_System:
                             self.send_message(conn, pickle.dumps(mssg))
                             print("Message regarding replicas sent to client")
 
-                    elif mssg.type == 'get':
+                    elif recv_mssg.type == 'get':
                         if self.machine.nodeId[3] == self.leader_node[3]:
-                            replicas = self.leader_work(mssg.type, mssg.kwargs['filename'])
+                            replicas = self.leader_work(recv_mssg.type, recv_mssg.kwargs['filename'])
                             if len(replicas) == 0:
                                 mssg = Message(msg_type='NACK',
                                                 host=self.machine.nodeId,
                                                 membership_list=None,
                                                 counter=None,
-                                                replica=None
+                                                replicas=None
                                                 )
                                 self.send_message(conn, pickle.dumps(mssg))
                             else:
@@ -618,9 +586,57 @@ class File_System:
                                                 )
                                 self.send_message(conn, pickle.dumps(mssg))
 
-                    elif mssg.type == 'delete':
+                    elif recv_mssg.type == 'multiread':
                         if self.machine.nodeId[3] == self.leader_node[3]:
-                            replicas = self.leader_work(mssg.type, mssg.kwargs['filename'])
+                            replicas = self.leader_work(recv_mssg.type, recv_mssg.kwargs['sdfs_filename'])
+                            if len(replicas) == 0:
+                                mssg = Message(msg_type='NACK',
+                                                host=self.machine.nodeId,
+                                                membership_list=None,
+                                                counter=None,
+                                                replicas=None
+                                                )
+                                self.send_message(conn, pickle.dumps(mssg))
+                            else:
+                                # For each VM in the multiread group, send the replica list
+                                for machine in recv_mssg.kwargs['machines']:
+                                    machine_num = int(machine[2:])
+                                    
+                                    if machine_num == self.machine.nodeId[3]:
+                                        mssg = Message(msg_type='replica',
+                                                        host=self.machine.nodeId,
+                                                        membership_list=None,
+                                                        counter=None,
+                                                        replicas=replicas
+                                                        )
+                                        self.send_message(conn, pickle.dumps(mssg))
+
+                                    all_nodes = list(self.machine.membership_list.active_nodes.keys())
+                                    # Find the VM IP and Port where multiread need to initiated
+                                    send_node = None
+                                    for node in all_nodes:
+                                        if node[3] == machine_num:
+                                            send_node = node
+                                            break
+                                    
+                                    sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                                    sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                                    sock_fd.connect((send_node[0], BASE_FS_PORT  + send_node[3]))
+
+                                    mssg = Message(msg_type='multiread_get',
+                                                    host=self.machine.nodeId,
+                                                    membership_list=None,
+                                                    counter=None,
+                                                    sdfs_filename=recv_mssg.kwargs['sdfs_filename'],
+                                                    local_filename=recv_mssg.kwargs['local_filename'],
+                                                    replicas=replicas
+                                                    )
+                                    self.send_message(sock_fd, pickle.dumps(mssg))
+                                    sock_fd.close()
+
+                    elif recv_mssg.type == 'delete':
+                        if self.machine.nodeId[3] == self.leader_node[3]:
+                            replicas = self.leader_work(recv_mssg.type, recv_mssg.kwargs['filename'])
                             if len(replicas) == 0:
                                 mssg = Message(msg_type='NACK',
                                                 host=self.machine.nodeId,
@@ -638,9 +654,9 @@ class File_System:
                                                 )
                                 self.send_message(conn, pickle.dumps(mssg))
 
-                    elif mssg.type == 'ls':
+                    elif recv_mssg.type == 'ls':
                         if self.machine.nodeId[3] == self.leader_node[3]:
-                            replicas = self.leader_work(mssg.type, mssg.kwargs['sdfsfilename'])
+                            replicas = self.leader_work(recv_mssg.type, recv_mssg.kwargs['sdfsfilename'])
                             if len(replicas) == 0:
                                 mssg = Message(msg_type='NACK',
                                                 host=self.machine.nodeId,
