@@ -20,7 +20,7 @@ INIT_STATUS = 'Not Joined'  # Initial status of a node
 BASE_FS_PORT = 9000
 BASE_PORT = 8000
 WRITE_QUORUM = 1
-REPLICATION_FACTOR = 2
+REPLICATION_FACTOR = 3
 
 BUFFER_SIZE = 4096
 
@@ -136,7 +136,7 @@ class Client:
             data = sock_fd.recv(MAX)
             mssg = pickle.loads(data)
             sock_fd.close()
-            print(mssg.type, mssg.host, mssg.kwargs)
+            # print(mssg.type, mssg.host, mssg.kwargs)
 
             if mssg.type == "replica":
                 print("Replica Servers: ", mssg.kwargs['replica'])
