@@ -23,13 +23,8 @@ BASE_READ_PORT = 11000
 BASE_DELETE_PORT = 12000
 BASE_FS_PING_PORT = 13000
 BASE_REREPLICATION_PORT = 14000
-REPLICATION_FACTOR = 3
-WRITE_QUORUM = 3
-READ_QUORUM = 1
 MAX = 8192
 
-BUFFER_SIZE = 4096
-SEPARATOR = " "
 HOME_DIR = "./DS"
 
 
@@ -169,7 +164,7 @@ class File_System:
                                 else:
                                     self.machine.membership_list.file_replication_dict[file].add(mssg.host)
                                 
-                                if len(self.machine.membership_list.file_replication_dict[file]) == REPLICATION_FACTOR: # should be min(num_machines, replication factor)
+                                if len(self.machine.membership_list.file_replication_dict[file]) == self.machine.REPLICATION_FACTOR: # should be min(num_machines, replication factor)
                                     self.machine.membership_list.file_lock_set.remove(file)
                             
                             elif mssg.type == 'delete_ping':
@@ -368,14 +363,14 @@ class File_System:
                 # Receive file content, write to the file and send ACK
                 self.machine.logger.info("[Write] Receiving file content...")
                 
-                bytes_read = conn.recv(BUFFER_SIZE)
+                bytes_read = conn.recv(self.machine.BUFFER_SIZE)
                 while bytes_read:
                     if not bytes_read:
                         break
                     else:
                         # write to the file the bytes we just received
                         f.write(bytes_read)
-                        bytes_read = conn.recv(BUFFER_SIZE)
+                        bytes_read = conn.recv(self.machine.BUFFER_SIZE)
 
                 f.close()
 
@@ -464,14 +459,14 @@ class File_System:
         self.send_message(sock_fd, pickle.dumps(sdfs_filename))
 
         with open(local_filename, 'wb') as f:
-            bytes_read = sock_fd.recv(BUFFER_SIZE)
+            bytes_read = sock_fd.recv(self.machine.BUFFER_SIZE)
             while bytes_read:
                 if not bytes_read:
                     break
                 else:
                     # write to the file the bytes we just received
                     f.write(bytes_read)
-                    bytes_read = sock_fd.recv(BUFFER_SIZE)
+                    bytes_read = sock_fd.recv(self.machine.BUFFER_SIZE)
         
         sock_fd.close()
         print("[ACK Received] Get file successfully\n")
@@ -490,7 +485,7 @@ class File_System:
                     if sdfs_filename not in self.machine.membership_list.file_replication_dict:
                         # Choose Replication Servers if file is present
                         servers = self.machine.membership_list.active_nodes.keys()
-                        replica_servers = random.sample(servers, REPLICATION_FACTOR)
+                        replica_servers = random.sample(servers, self.machine.REPLICATION_FACTOR)
                         replica_servers = [(server[0], server[1] - BASE_PORT + BASE_WRITE_PORT, server[2], server[3]) for server in replica_servers]
                     else:
                         replica_servers = self.machine.membership_list.file_replication_dict[sdfs_filename]

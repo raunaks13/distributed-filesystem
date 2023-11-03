@@ -19,10 +19,7 @@ MAX = 8192                  # Max size of message
 INIT_STATUS = 'Not Joined'  # Initial status of a node
 BASE_FS_PORT = 9000
 BASE_PORT = 8000
-WRITE_QUORUM = 3
-REPLICATION_FACTOR = 3
 
-BUFFER_SIZE = 4096
 
 class Client:
 
@@ -95,7 +92,7 @@ class Client:
                 if mssg.type == "ACK":
                     ack_count += 1
 
-        if ack_count >= WRITE_QUORUM:
+        if ack_count >= self.machine.WRITE_QUORUM:
             print("[ACK Received] Put file successfully\n")
         else:
             print("[ACK Not Received] Put file unsuccessfully\n")            
@@ -164,14 +161,14 @@ class Client:
         self.send_message(sock_fd, pickle.dumps(sdfs_filename))
 
         with open(local_filename, 'wb') as f:
-            bytes_read = sock_fd.recv(BUFFER_SIZE)
+            bytes_read = sock_fd.recv(self.machine.BUFFER_SIZE)
             while bytes_read:
                 if not bytes_read:
                     break
                 else:
                     # write to the file the bytes we just received
                     f.write(bytes_read)
-                    bytes_read = sock_fd.recv(BUFFER_SIZE)
+                    bytes_read = sock_fd.recv(self.machine.BUFFER_SIZE)
         
         sock_fd.close()
 
@@ -279,7 +276,7 @@ class Client:
 
             sock_fd.close()
         
-        if ack_count == REPLICATION_FACTOR:
+        if ack_count == self.machine.REPLICATION_FACTOR:
             print("[ACK Received] Deleted file successfully\n")
         else:
             print("[ACK Not Received] Deleted file unsuccessfully\n")
