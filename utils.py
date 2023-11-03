@@ -52,7 +52,7 @@ class MembershipList:
         # In a any node says the host is failed, then it will be failed no matter what
         if cleanup_status is not None and cleanup_status["flag"] == 1:
             if self.cleanup_status_dict[host]["flag"] == 0:
-                print(f'Node {host[0]}:{host[1]} has been failed [{datetime.datetime.now()}] \n')
+                print(f'[Gossip] Node {host[0]}:{host[1]} has been failed [{datetime.datetime.now()}] \n')
                 logger.debug(f'Node {host} has been failed')
 
                 self.cleanup_status_dict[host]["flag"] = 1

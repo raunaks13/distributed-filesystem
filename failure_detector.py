@@ -103,6 +103,13 @@ class Failure_Detector:
                                                                         self.machine.logger
                                                                         )
                 else:
+                    # Add failed node to failed_nodes list if failure is detected through gossip (not by machine itself)
+                    if msg_membership_list.cleanup_status_dict[host] is not None and \
+                        msg_membership_list.cleanup_status_dict[host]["flag"] == 1:
+                        if self.machine.membership_list.cleanup_status_dict[host]["flag"] == 0:
+                                print(f'[Gossip] Adding {host} to Failed Nodes')
+                                self.machine.membership_list.failed_nodes.append(host)
+                                
                     self.machine.membership_list.update_member(host, 
                                                         msg_membership_list.active_nodes[host].membership_counter,
                                                         msg_membership_list.cleanup_status_dict[host],
@@ -221,9 +228,10 @@ class Failure_Detector:
                             with self.membership_mutex:
                                 self.machine.membership_list.cleanup_status_dict[host]["flag"] = 1
                                 self.machine.membership_list.cleanup_status_dict[host]["cleanup_start_time"] = time_now
+                                print(f'[By Itself] Adding {host} to Failed Nodes')
                                 self.machine.membership_list.failed_nodes.append(host)
 
-                            print(f'Node {host[0]}:{host[1]} has been failed at {datetime.datetime.now()} \n')
+                            print(f'[By itself] Node {host[0]}:{host[1]} has been failed at {datetime.datetime.now()} \n')
                             self.machine.logger.debug(f'Node {host} has been failed')
 
             time.sleep(0.2)

@@ -77,6 +77,11 @@ class File_System:
         print(self.machine.membership_list.failed_nodes)
         print("\n")
 
+    
+    def print_leader(self):
+        print(self.leader_node)
+        print("\n")
+
 
     def ls_sdfsfilename(self, sdfsfilename):
         sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -216,6 +221,9 @@ class File_System:
                 (self.leader_node is not None): # leader must be a part of file replication dict
                 if self.machine.nodeId[3] == self.leader_node[3]:
                     if len(self.machine.membership_list.failed_nodes) > 0:
+                        print("in thread")
+                        time.sleep(20)
+                        print("Failed Nodes Currently: ", self.machine.membership_list.failed_nodes)
                         node = self.machine.membership_list.failed_nodes[0]
 
                         d = self.machine.membership_list.file_replication_dict
@@ -225,6 +233,8 @@ class File_System:
                                 inverted_replica_dict[m].append(fil)
 
                         replica_rereplication = inverted_replica_dict[node] # filenames in failed node
+                        print("Files to be replicated: ", replica_rereplication)
+                        print(self.machine.membership_list.active_nodes.keys())
 
                         for filename in replica_rereplication: 
                             alive_replica_node = None
@@ -237,13 +247,17 @@ class File_System:
                                     break
 
                             # Find a node from where the content will be copied to the new node
-                            all_replica_nodes = copy.deepcopy(self.machine.membership_list.file_replication_dict[filename])
-                            all_replica_nodes.remove(node)
+                            replica_nodes = self.machine.membership_list.file_replication_dict[filename]
+                            active_nodes = list(self.machine.membership_list.active_nodes.keys())
+                            all_replica_nodes = list(set(replica_nodes).intersection(active_nodes))
+                            # all_replica_nodes = copy.deepcopy(self.machine.membership_list.file_replication_dict[filename])
+                            # all_replica_nodes.remove(node)
                             alive_replica_node = list(all_replica_nodes)[0]
                             
                             
                             sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                             sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                            print("[Re-Replication] Sending message to {}: Instr copy replica {} from {} to {} ".format(alive_replica_node, filename, alive_replica_node, new_replica_node))
                             sock_fd.connect((alive_replica_node[0], BASE_REREPLICATION_PORT  + alive_replica_node[3]))
 
                             mssg = Message(msg_type='put_replica',
@@ -267,11 +281,14 @@ class File_System:
                                 # TODO: What if rereplication failed, what to do?
                                 pass
 
+                        print("Popping", self.machine.membership_list.failed_nodes[0])
                         self.machine.membership_list.failed_nodes.pop(0)
+                        print("\n")
 
 
 
     def write_replicas(self, filename, replica):
+        print("Sending message to", replica)
         sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock_fd.connect((replica[0], replica[3] + BASE_WRITE_PORT)) 
@@ -321,6 +338,7 @@ class File_System:
                     if mssg.type == 'put_replica':
                         filename = mssg.kwargs['filename']
                         replica_node = mssg.kwargs['replica_node']
+                        print(f"[Re-Replication] Putting Replica of {filename} in {replica_node}")
                         ret = self.write_replicas(filename, replica_node)
                         self.machine.logger.info(f"[Re-Replication] Putting Replica of {filename} in {replica_node}")
                         if ret == 1:
@@ -354,6 +372,7 @@ class File_System:
                 # Receive Filename and open the file. If file exists, ACK
                 data = conn.recv(MAX)
                 self.machine.logger.info(f"[Write] Filename received: {pickle.loads(data)}")
+                print(f"[Write] Filename received: {pickle.loads(data)}")
                 filename = pickle.loads(data)
 
                 f = open(os.path.join(HOME_DIR, filename), 'wb')
@@ -375,6 +394,7 @@ class File_System:
                 f.close()
 
                 self.filestore_ping('w', filename)
+                print("Sending ACK to leader")
                 mssg = Message(msg_type='ACK',
                                 host=self.machine.nodeId,
                                 membership_list=None,

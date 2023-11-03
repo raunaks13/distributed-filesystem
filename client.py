@@ -241,7 +241,8 @@ class Client:
         self.send_message(sock_fd, pickle.dumps(mssg))
         self.machine.logger.info('Multiread Message sent to Leader')
 
-        machine_nums = [int(machine[2:]) for machine in machines]
+        print(machines, [machine.split('VM')[1] for machine in machines])
+        machine_nums = [int(machine.split('VM')[1]) for machine in machines]
         if self.machine.nodeId[3] in machine_nums:
             data = sock_fd.recv(MAX)
             mssg = pickle.loads(data)
@@ -383,6 +384,9 @@ class Client:
 
             elif inp == "list_failed_nodes":
                 self.file_system.list_failed_nodes()
+
+            elif inp == "print_leader":
+                self.file_system.print_leader()
 
 
 
