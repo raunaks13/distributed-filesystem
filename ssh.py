@@ -42,12 +42,21 @@ rsync_hosts = [
          "fa23-cs425-3702.cs.illinois.edu",
          "fa23-cs425-3703.cs.illinois.edu",
          "fa23-cs425-3704.cs.illinois.edu",
+<<<<<<< Updated upstream
         #  "fa23-cs425-3705.cs.illinois.edu",
         #  "fa23-cs425-3706.cs.illinois.edu",
         #  "fa23-cs425-3707.cs.illinois.edu",
         #  "fa23-cs425-3708.cs.illinois.edu",
         #  "fa23-cs425-3709.cs.illinois.edu",
         #  "fa23-cs425-3710.cs.illinois.edu",    
+=======
+         "fa23-cs425-3705.cs.illinois.edu",
+         "fa23-cs425-3706.cs.illinois.edu",
+         "fa23-cs425-3707.cs.illinois.edu",
+         "fa23-cs425-3708.cs.illinois.edu",
+         "fa23-cs425-3709.cs.illinois.edu",
+         "fa23-cs425-3710.cs.illinois.edu",    
+>>>>>>> Stashed changes
         ]
 
 pssh_hosts = [

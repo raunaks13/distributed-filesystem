@@ -229,9 +229,7 @@ class File_System:
                             for m in v:
                                 inverted_replica_dict[m].append(fil)
 
-
                         replica_rereplication = inverted_replica_dict[node] # filenames in failed node
-                        # print("Inverted replica dict", inverted_replica_dict.items())
 
                         for filename in replica_rereplication: 
                             alive_replica_node = None
@@ -260,7 +258,7 @@ class File_System:
                                             filename=filename,
                                             replica_node=new_replica_node
                                             )
-                            print("Sending message to {}: Instr copy {} from {} to {} ".format(alive_replica_node, filename, alive_replica_node, new_replica_node))
+                            self.machine.logger.info("[Re-Replication] Sending message to {}: Instr copy replica {} from {} to {} ".format(alive_replica_node, filename, alive_replica_node, new_replica_node))
                             self.send_message(sock_fd, pickle.dumps(mssg))
                             # Wait for ACK
                             data = sock_fd.recv(MAX)
@@ -282,7 +280,6 @@ class File_System:
         sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock_fd.connect((replica[0], replica[3] + BASE_WRITE_PORT)) 
-        print(replica[0], replica[3]+BASE_WRITE_PORT)
 
         # Send filename message to the replicas
         self.send_message(sock_fd, pickle.dumps(filename))
@@ -330,8 +327,7 @@ class File_System:
                         filename = mssg.kwargs['filename']
                         replica_node = mssg.kwargs['replica_node']
                         ret = self.write_replicas(filename, replica_node)
-                        print("Ret:", ret)
-                        print(filename, replica_node)
+                        self.machine.logger.info(f"[Re-Replication] Putting Replica of {filename} in {replica_node}")
                         if ret == 1:
                             mssg = Message(msg_type='ACK',
                                             host=self.machine.nodeId,
@@ -350,10 +346,7 @@ class File_System:
                     conn.close()
 
 
-    def receive_writes(self):
-        # TODO: Lock a file
-        # TODO:How to enable multiple writes to different files if the conn is established
-        
+    def receive_writes(self):        
         sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
@@ -362,11 +355,10 @@ class File_System:
 
         while True:
             conn, addr = sock_fd.accept()
-            # print(conn, addr)
             try:
                 # Receive Filename and open the file. If file exists, ACK
                 data = conn.recv(MAX)
-                print(f"Filename received: {pickle.loads(data)}")
+                self.machine.logger.info(f"[Write] Filename received: {pickle.loads(data)}")
                 filename = pickle.loads(data)
 
                 f = open(os.path.join(HOME_DIR, filename), 'wb')
@@ -374,7 +366,7 @@ class File_System:
                     conn.sendall(pickle.dumps("ACK"))
 
                 # Receive file content, write to the file and send ACK
-                print("Receiving file content")
+                self.machine.logger.info("[Write] Receiving file content...")
                 
                 bytes_read = conn.recv(BUFFER_SIZE)
                 while bytes_read:
@@ -385,7 +377,6 @@ class File_System:
                         f.write(bytes_read)
                         bytes_read = conn.recv(BUFFER_SIZE)
 
-                print("File received")
                 f.close()
 
                 self.filestore_ping('w', filename)
@@ -412,7 +403,7 @@ class File_System:
             try:
                 # Receive Filename and open the file. If file exists, ACK
                 data = conn.recv(MAX)
-                print(f"Filename received: {pickle.loads(data)}")
+                self.machine.logger.info(f"[Read] Filename received: {pickle.loads(data)}")
                 filename = pickle.loads(data)
 
                 with open(os.path.join(HOME_DIR, filename), 'rb') as f:
@@ -443,7 +434,7 @@ class File_System:
             try:
                 # Receive Filename and open the file. If file exists, ACK
                 data = conn.recv(MAX)
-                print(f"Filename received: {pickle.loads(data)}")
+                self.machine.logger.info(f"[Delete] Filename received: {pickle.loads(data)}")
                 filename = pickle.loads(data)
 
                 os.remove(os.path.join(HOME_DIR, filename))
@@ -484,7 +475,6 @@ class File_System:
                     bytes_read = sock_fd.recv(BUFFER_SIZE)
         
         sock_fd.close()
-
         print("[ACK Received] Get file successfully\n")
 
 
@@ -544,10 +534,8 @@ class File_System:
         recv_sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         recv_sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
-        print("Receiving messages from leader on port ", self.port)
         recv_sock_fd.bind((self.ip, self.port))
         recv_sock_fd.listen(5)
-        print("Listening on port ", self.ip, self.port)
 
         while True:
             conn, addr = recv_sock_fd.accept()
@@ -558,12 +546,11 @@ class File_System:
 
                 if recv_mssg.type == 'multiread_get':
                     if os.fork() == 0:
-                        self.read_replicas(recv_mssg.kwargs['sdfs_filename'], recv_mssg.kwargs['local_filename'], recv_mssg.kwargs['replicas'])
+                        self.read_replicas(recv_mssg.kwargs['sdfs_filename'], recv_mssg.kwargs['local_filename'], recv_mssg.kwargs['replica'])
                         
 
                 if self.machine.nodeId[3] != self.leader_node[3]:
                     # If not leader, ask client to send to leader
-                    print("Message received at non-leader")
                     mssg = Message(msg_type='leader',
                                     host=self.machine.nodeId,
                                     membership_list=None,
@@ -575,7 +562,7 @@ class File_System:
                 else:
                     if recv_mssg.type == 'put':
                         if self.machine.nodeId[3] == self.leader_node[3]:
-                            print("Put message received at leader")
+                            self.machine.logger.info("[Receive at Leader] Put message received at leader")
                             replicas = self.leader_work(recv_mssg.type, recv_mssg.kwargs['filename'])
                             mssg = Message(msg_type='replica',
                                             host=self.machine.nodeId,
@@ -584,7 +571,7 @@ class File_System:
                                             replica=replicas
                                             )
                             self.send_message(conn, pickle.dumps(mssg))
-                            print("Message regarding replicas sent to client")
+                            self.machine.logger.info("Message regarding replicas sent to client")
 
                     elif recv_mssg.type == 'get':
                         if self.machine.nodeId[3] == self.leader_node[3]:
@@ -594,7 +581,7 @@ class File_System:
                                                 host=self.machine.nodeId,
                                                 membership_list=None,
                                                 counter=None,
-                                                replicas=None
+                                                replica=None
                                                 )
                                 self.send_message(conn, pickle.dumps(mssg))
                             else:
@@ -602,7 +589,7 @@ class File_System:
                                                 host=self.machine.nodeId,
                                                 membership_list=None,
                                                 counter=None,
-                                                replicas=replicas
+                                                replica=replicas
                                                 )
                                 self.send_message(conn, pickle.dumps(mssg))
 
@@ -614,7 +601,7 @@ class File_System:
                                                 host=self.machine.nodeId,
                                                 membership_list=None,
                                                 counter=None,
-                                                replicas=None
+                                                replica=None
                                                 )
                                 self.send_message(conn, pickle.dumps(mssg))
                             else:
@@ -627,7 +614,7 @@ class File_System:
                                                         host=self.machine.nodeId,
                                                         membership_list=None,
                                                         counter=None,
-                                                        replicas=replicas
+                                                        replica=replicas
                                                         )
                                         self.send_message(conn, pickle.dumps(mssg))
 
@@ -649,7 +636,7 @@ class File_System:
                                                     counter=None,
                                                     sdfs_filename=recv_mssg.kwargs['sdfs_filename'],
                                                     local_filename=recv_mssg.kwargs['local_filename'],
-                                                    replicas=replicas
+                                                    replica=replicas
                                                     )
                                     self.send_message(sock_fd, pickle.dumps(mssg))
                                     sock_fd.close()

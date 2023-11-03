@@ -19,7 +19,7 @@ MAX = 8192                  # Max size of message
 INIT_STATUS = 'Not Joined'  # Initial status of a node
 BASE_FS_PORT = 9000
 BASE_PORT = 8000
-WRITE_QUORUM = 1
+WRITE_QUORUM = 3
 REPLICATION_FACTOR = 3
 
 BUFFER_SIZE = 4096
@@ -75,7 +75,6 @@ class Client:
             # Send filename message to the replicas
             self.send_message(sock_fd, pickle.dumps(sdfs_filename))
             data = sock_fd.recv(MAX)
-            print("File opened at replica: ", replica)
             # If file is opened, send the file content
             if "ACK" == pickle.loads(data):
 
@@ -121,13 +120,13 @@ class Client:
                         )                      
 
         self.send_message(sock_fd, pickle.dumps(put_mssg))
-        print(f'Put Message sent to {modified_host}')
+        self.machine.logger.info(f'Put Message sent to {modified_host}')
         data = sock_fd.recv(MAX)
         mssg = pickle.loads(data)
         sock_fd.close()
 
         if mssg.type == "leader":
-            print("Leader is: ", mssg.kwargs['leader'])
+            self.machine.logger.info(f"Leader is: {mssg.kwargs['leader']}")
             sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             sock_fd.connect((mssg.kwargs['leader'][0], mssg.kwargs['leader'][1]))
@@ -136,23 +135,22 @@ class Client:
             data = sock_fd.recv(MAX)
             mssg = pickle.loads(data)
             sock_fd.close()
-            # print(mssg.type, mssg.host, mssg.kwargs)
 
             if mssg.type == "replica":
-                print("Replica Servers: ", mssg.kwargs['replica'])
+                self.machine.logger.info(f"Replica Servers: {mssg.kwargs['replica']}")
                 self.write_replicas(mssg, local_filename, sdfs_filename)
             else:
                 print("Unsucceessful Attempt\n")
 
         elif mssg.type == "replica":
-            print("Replica Servers: ", mssg.kwargs['replica'])
+            self.machine.logger.info(f"Replica Servers: {mssg.kwargs['replica']}")
             self.write_replicas(mssg, local_filename, sdfs_filename)                
         else:
             print("Unsuccessful Attempt\n")          
 
 
     def read_replicas(self, mssg, sdfs_filename, local_filename):
-        replicas = mssg.kwargs['replicas']
+        replicas = mssg.kwargs['replica']
         for replica in replicas:
             try:
                 sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -198,13 +196,13 @@ class Client:
                         )
 
         self.send_message(sock_fd, pickle.dumps(get_mssg))
-        print('Get Message sent')
+        self.machine.logger.info("Get Message sent")
         data = sock_fd.recv(MAX)
         mssg = pickle.loads(data)
         sock_fd.close()
 
         if mssg.type == "leader":
-            print("Leader is: ", mssg.kwargs['leader'])
+            self.machine.logger.info(f"Leader is: {mssg.kwargs['leader']}")
             sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             sock_fd.connect((mssg.kwargs['leader'][0], mssg.kwargs['leader'][1]))
@@ -215,13 +213,13 @@ class Client:
             sock_fd.close()
 
             if mssg.type == "replica":
-                print("Replica Servers: ", mssg.kwargs['replicas'])
+                self.machine.logger.info(f"Replica Servers: {mssg.kwargs['replica']}")
                 self.read_replicas(mssg, sdfs_filename, local_filename)
             else:
                 print("Unsuccessful Attempt")
 
         elif mssg.type == "replica":
-            print("Replica Servers: ", mssg.kwargs['replicas'])
+            self.machine.logger.info(f"Replica Servers: {mssg.kwargs['replica']}")
             self.read_replicas(mssg, sdfs_filename, local_filename)  
 
         elif mssg.type == "NACK":
@@ -244,7 +242,7 @@ class Client:
                         machines=machines,
                         )
         self.send_message(sock_fd, pickle.dumps(mssg))
-        print('Multiread Message sent to Leader')
+        self.machine.logger.info('Multiread Message sent to Leader')
 
         machine_nums = [int(machine[2:]) for machine in machines]
         if self.machine.nodeId[3] in machine_nums:
@@ -253,7 +251,7 @@ class Client:
             sock_fd.close()
 
             if mssg.type == "replica":
-                print("Replica Servers: ", mssg.kwargs['replicas'])
+                self.machine.logger.info(f"Replica Servers: {mssg.kwargs['replica']}")
                 self.read_replicas(mssg, sdfs_filename, local_filename)
             else:
                 print("Unsuccessful Attempt")
@@ -306,13 +304,13 @@ class Client:
                         )                      
 
         self.send_message(sock_fd, pickle.dumps(delete_mssg))
-        print('Delete Message sent')
+        self.machine.logger.info('Delete Message sent')
         data = sock_fd.recv(MAX)
         mssg = pickle.loads(data)
         sock_fd.close()
 
         if mssg.type == "leader":
-            print("Leader is: ", mssg.kwargs['leader'])
+            self.machine.logger.info(f"Leader is: {mssg.kwargs['leader']}")
             sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             sock_fd.connect((mssg.kwargs['leader'][0], mssg.kwargs['leader'][1]))
@@ -323,13 +321,13 @@ class Client:
             sock_fd.close()
 
             if mssg.type == "replica":
-                print("Replica Servers: ", mssg.kwargs['replica'])
+                self.machine.logger.info(f"Replica Servers: {mssg.kwargs['replica']}")
                 self.delete_replicas(mssg, sdfs_filename)
             else:
                 print("Unsuccessful Attempt")
 
         elif mssg.type == "replica":
-            print("Replica Servers: ", mssg.kwargs['replica'])
+            self.machine.logger.info(f"Replica Servers: {mssg.kwargs['replica']}")
             self.delete_replicas(mssg, sdfs_filename)  
 
         elif mssg.type == "NACK":
@@ -382,8 +380,6 @@ class Client:
             
             elif inp == "store": # list all files being stored in current machine
                 self.file_system.store("./DS")
-                # files_list = os.listdir("./DS")
-                # print(files_list)
             
             elif inp == "list_replica_dict":
                 self.file_system.list_replica_dict()
