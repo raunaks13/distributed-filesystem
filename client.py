@@ -61,45 +61,45 @@ class Client:
         self.file_system.start_machine()
 
 
-    def write_replicas(self, mssg, local_filename, sdfs_filename):
-        replica_servers = mssg.kwargs['replica']
-        ack_count = 0
-        for replica in replica_servers:
-            sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            sock_fd.connect((replica[0], replica[1])) 
+    def write_replicas(self, replica, local_filename, sdfs_filename, ack_count, index):
+        # replica_servers = mssg.kwargs['replica']
+        # ack_count = 0
+        # for replica in replica_servers:
+        sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock_fd.connect((replica[0], replica[1])) 
 
-            # Send filename message to the replicas
-            self.send_message(sock_fd, pickle.dumps(sdfs_filename))
-            data = sock_fd.recv(MAX)
-            # If file is opened, send the file content
-            if "ACK" == pickle.loads(data):
+        # Send filename message to the replicas
+        self.send_message(sock_fd, pickle.dumps(sdfs_filename))
+        data = sock_fd.recv(MAX)
+        # If file is opened, send the file content
+        if "ACK" == pickle.loads(data):
 
-                with open(local_filename, 'rb') as f:
+            with open(local_filename, 'rb') as f:
+                bytes_read = f.read()
+                if not bytes_read:
+                    return
+
+                while bytes_read:
+                    self.send_message(sock_fd, bytes_read)
                     bytes_read = f.read()
-                    if not bytes_read:
-                        break
+            
+            sock_fd.shutdown(socket.SHUT_WR)
+            data = sock_fd.recv(MAX)
+            mssg = pickle.loads(data)
+            sock_fd.close()
 
-                    while bytes_read:
-                        self.send_message(sock_fd, bytes_read)
-                        bytes_read = f.read()
-                
-                sock_fd.shutdown(socket.SHUT_WR)
-                data = sock_fd.recv(MAX)
-                mssg = pickle.loads(data)
-                sock_fd.close()
+            if mssg.type == "ACK":
+                ack_count[index] = 1
 
-                if mssg.type == "ACK":
-                    ack_count += 1
-
-        if ack_count >= self.machine.WRITE_QUORUM:
-            print("[ACK Received] Put file successfully\n")
-        else:
-            print("[ACK Not Received] Put file unsuccessfully\n")            
+        # if ack_count >= self.machine.WRITE_QUORUM:
+        #     print("[ACK Received] Put file successfully\n")
+        # else:
+        #     print("[ACK Not Received] Put file unsuccessfully\n")            
 
 
     
-    def put(self, local_filename, sdfs_filename):
+    def put(self, sdfs_filename, local_filename):
         ''' Put a file in the SDFS '''
         sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -135,7 +135,25 @@ class Client:
 
             if mssg.type == "replica":
                 self.machine.logger.info(f"Replica Servers: {mssg.kwargs['replica']}")
-                self.write_replicas(mssg, local_filename, sdfs_filename)
+
+                replicas = mssg.kwargs['replica']
+                threads = []
+                ack_count = [0] * len(replicas)
+                for i, replica in enumerate(replicas):
+                    t = threading.Thread(target=self.write_replicas, args=(replica, sdfs_filename, local_filename, ack_count, i))
+                    threads.append(t)
+
+                for t in threads:
+                    t.start()
+                for t in threads:
+                    t.join()
+                
+                if sum(ack_count) >= self.machine.WRITE_QUORUM:
+                    print("[ACK Received] Put file successfully\n")
+                else:
+                    print("[ACK Not Received] Put file unsuccessfully\n")
+
+                # self.write_replicas(mssg, local_filename, sdfs_filename)
             else:
                 print("Unsucceessful Attempt\n")
 

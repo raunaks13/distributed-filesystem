@@ -115,6 +115,7 @@ class File_System:
     def argmax(self, a):
         return max(range(len(a)), key=lambda x: a[x])
 
+
     def leader_election(self, sock_fd=None):
         ''' Detect whether the leader has failed 
             If the leader has failed, start a new election
@@ -214,6 +215,52 @@ class File_System:
         sock_fd.close()
 
 
+
+    def rereplication_leader_helper(self, filename, node, results, index):
+        alive_replica_node = None
+        new_replica_node = None
+
+        # Find the new node where the replica will be stored
+        while True:
+            new_replica_node = random.sample(self.machine.membership_list.active_nodes.keys(), 1)[0]
+            replica_nodes = self.machine.membership_list.file_replication_dict[filename]
+            if new_replica_node not in replica_nodes:
+                break
+
+        # Find a node from where the content will be copied to the new node
+        replica_nodes = self.machine.membership_list.file_replication_dict[filename]
+        active_nodes = list(self.machine.membership_list.active_nodes.keys())
+        all_replica_nodes = list(set(replica_nodes).intersection(active_nodes))
+        alive_replica_node = list(all_replica_nodes)[0]
+
+        sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        print("[Re-Replication] Sending message to {}: Instr copy replica {} from {} to {} ".format(alive_replica_node, filename, alive_replica_node, new_replica_node))
+        sock_fd.connect((alive_replica_node[0], BASE_REREPLICATION_PORT  + alive_replica_node[3]))
+
+        mssg = Message(msg_type='put_replica',
+                        host=self.machine.nodeId,
+                        membership_list=None,
+                        counter=None,
+                        filename=filename,
+                        replica_node=new_replica_node
+                        )
+        self.machine.logger.info("[Re-Replication] Sending message to {}: Instr copy replica {} from {} to {} ".format(alive_replica_node, filename, alive_replica_node, new_replica_node))
+        self.send_message(sock_fd, pickle.dumps(mssg))
+        # Wait for ACK
+        data = sock_fd.recv(MAX)
+        mssg = pickle.loads(data)
+        sock_fd.close()
+
+        if mssg.type == "ACK":
+            self.machine.membership_list.file_replication_dict[filename].add(new_replica_node)
+            self.machine.membership_list.file_replication_dict[filename].remove(node)
+            results[index] = 1
+        else:
+            # TODO: What if rereplication failed, what to do?
+            pass
+
+
     def rereplication_leader(self):
         ''' Re-replicate the files stored in the failed node '''
         while True:
@@ -236,6 +283,18 @@ class File_System:
                         print("Files to be replicated: ", replica_rereplication)
                         print(self.machine.membership_list.active_nodes.keys())
 
+                        threads = []
+                        results = [0] * len(replica_rereplication)
+                        for i, filename in enumerate(replica_rereplication):
+                            t = threading.Thread(target=self.rereplication_leader_helper, args=(filename, node, results, i))
+                            threads.append(t)
+                        
+                        for t in threads:
+                            t.start()
+                        for t in threads: 
+                            t.join()
+
+                        '''
                         for filename in replica_rereplication: 
                             alive_replica_node = None
                             new_replica_node = None
@@ -280,10 +339,11 @@ class File_System:
                             else:
                                 # TODO: What if rereplication failed, what to do?
                                 pass
-
-                        print("Popping", self.machine.membership_list.failed_nodes[0])
-                        self.machine.membership_list.failed_nodes.pop(0)
-                        print("\n")
+                        '''
+                        if sum(results) == len(replica_rereplication):
+                            print("Popping", self.machine.membership_list.failed_nodes[0])
+                            self.machine.membership_list.failed_nodes.pop(0)
+                            print("\n")
 
 
 
