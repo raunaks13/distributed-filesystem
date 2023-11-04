@@ -434,7 +434,7 @@ class Client:
             elif inp == "print_leader":
                 self.file_system.print_leader()
             
-            elif "write_wikicorpus":
+            elif inp == "write_wikicorpus":
                 file_paths = []
                 for name in os.listdir("../WikiCorpus/"):
                     path = os.path.join("../Wikicorpus/", name)
