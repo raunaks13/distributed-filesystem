@@ -42,6 +42,10 @@ class Client:
 
         self.machine.status = 'Joined' if MACHINE_NUM==1 else STATUS
         self.machine.membership_list = MembershipList()  
+        self.put_start_time = 0
+        self.put_end_time = 0
+        self.get_start_time = 0
+        self.get_end_time = 0
 
 
     def send_message(self, sock_fd, msg):
@@ -99,7 +103,7 @@ class Client:
 
 
     
-    def put(self, sdfs_filename, local_filename):
+    def put(self, local_filename, sdfs_filename):
         ''' Put a file in the SDFS '''
         sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -140,7 +144,7 @@ class Client:
                 threads = []
                 ack_count = [0] * len(replicas)
                 for i, replica in enumerate(replicas):
-                    t = threading.Thread(target=self.write_replicas, args=(replica, sdfs_filename, local_filename, ack_count, i))
+                    t = threading.Thread(target=self.write_replicas, args=(replica, local_filename, sdfs_filename, ack_count, i))
                     threads.append(t)
 
                 for t in threads:
@@ -149,7 +153,9 @@ class Client:
                     t.join()
                 
                 if sum(ack_count) >= self.machine.WRITE_QUORUM:
-                    print("[ACK Received] Put file successfully\n")
+                    self.put_end_time = datetime.datetime.now()
+                    print("[ACK Received] Put file successfully{}\n".format((self.put_end_time - self.put_start_time).total_seconds()))
+
                 else:
                     print("[ACK Not Received] Put file unsuccessfully\n")
 
@@ -189,8 +195,8 @@ class Client:
                     bytes_read = sock_fd.recv(self.machine.BUFFER_SIZE)
         
         sock_fd.close()
-
-        print("[ACK Received] Get file successfully\n")
+        self.get_end_time = datetime.datetime.now()
+        print("[ACK Received] Get file successfully{}\n".format((self.get_end_time - self.get_start_time).total_seconds()))
 
 
     def get(self, sdfs_filename, local_filename):
@@ -372,10 +378,12 @@ class Client:
                 self.fail_detector.disable_suspicion()
 
             elif inp.startswith("put"):
+                self.put_start_time = datetime.datetime.now()
                 _, local_filename, sdfs_filename = inp.split(' ')
                 self.put(local_filename, sdfs_filename)
 
             elif inp.startswith("get"):
+                self.get_start_time = datetime.datetime.now()
                 _, sdfs_filename, local_filename = inp.split(' ')
                 self.get(sdfs_filename, local_filename)
 
@@ -405,6 +413,18 @@ class Client:
 
             elif inp == "print_leader":
                 self.file_system.print_leader()
+            
+            elif "write_wikicorpus":
+                file_paths = []
+                for name in os.listdir("../WikiCorpus/"):
+                    path = os.path.join("../Wikicorpus/", name)
+                    file_paths.append(path)
+                
+                for fpath in file_paths:
+                    fname = os.path.basename(fpath)
+                    self.put(fpath, fname)
+
+
 
 
 
