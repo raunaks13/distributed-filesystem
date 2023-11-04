@@ -165,7 +165,27 @@ class Client:
 
         elif mssg.type == "replica":
             self.machine.logger.info(f"Replica Servers: {mssg.kwargs['replica']}")
-            self.write_replicas(mssg, local_filename, sdfs_filename)                
+
+            replicas = mssg.kwargs['replica']
+            threads = []
+            ack_count = [0] * len(replicas)
+            for i, replica in enumerate(replicas):
+                t = threading.Thread(target=self.write_replicas, args=(replica, local_filename, sdfs_filename, ack_count, i))
+                threads.append(t)
+
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+            
+            if sum(ack_count) >= self.machine.WRITE_QUORUM:
+                self.put_end_time = datetime.datetime.now()
+                print("[ACK Received] Put file successfully{}\n".format((self.put_end_time - self.put_start_time).total_seconds()))
+
+            else:
+                print("[ACK Not Received] Put file unsuccessfully\n")
+
+            # self.write_replicas(mssg, local_filename, sdfs_filename)                
         else:
             print("Unsuccessful Attempt\n")          
 

@@ -615,7 +615,7 @@ class File_System:
                 if op[0] == 'w':
                     mssg = self.write_queue.pop(0)
                     self.machine.logger.info(f"[Write] Message dequeued: {mssg}")
-                    self.leader_work(mssg.type, mssg.kwargs['filename'])
+                    replicas = self.leader_work(mssg.type, mssg.kwargs['filename'])
                     mssg = Message(msg_type='replica',
                                                 host=self.machine.nodeId,
                                                 membership_list=None,
@@ -679,9 +679,8 @@ class File_System:
                     if recv_mssg.type == 'put':
                         if self.machine.nodeId[3] == self.leader_node[3]:
                             self.machine.logger.info("[Receive at Leader] Put message received at leader")
-                            self.write_queue.append(recv_mssg)
-                            self.op_timestamps.append( ('w', datetime.datetime.now()) )
-                            '''
+                            # self.write_queue.append(recv_mssg)
+                            # self.op_timestamps.append( ('w', datetime.datetime.now()) )
                             replicas = self.leader_work(recv_mssg.type, recv_mssg.kwargs['filename'])
                             mssg = Message(msg_type='replica',
                                             host=self.machine.nodeId,
@@ -691,13 +690,11 @@ class File_System:
                                             )
                             self.send_message(conn, pickle.dumps(mssg))
                             self.machine.logger.info("Message regarding replicas sent to client")
-                            '''
 
                     elif recv_mssg.type == 'get':
                         if self.machine.nodeId[3] == self.leader_node[3]:
-                            self.read_queue.append(recv_mssg)
-                            self.op_timestamps.append( ('r', datetime.datetime.now()) )
-                            '''
+                            # self.read_queue.append(recv_mssg)
+                            # self.op_timestamps.append( ('r', datetime.datetime.now()) )
                             replicas = self.leader_work(recv_mssg.type, recv_mssg.kwargs['filename'])
                             if len(replicas) == 0:
                                 mssg = Message(msg_type='NACK',
@@ -715,7 +712,6 @@ class File_System:
                                                 replica=replicas
                                                 )
                                 self.send_message(conn, pickle.dumps(mssg))
-                            '''
 
                     elif recv_mssg.type == 'multiread':
                         if self.machine.nodeId[3] == self.leader_node[3]:
@@ -813,7 +809,7 @@ class File_System:
         ''' Start the server '''
         leader_election_thread = threading.Thread(target=self.leader_election)
         receive_thread = threading.Thread(target=self.receive)
-        dequeue_thread = threading.Thread(target=self.dequeue)
+        # dequeue_thread = threading.Thread(target=self.dequeue)
         receive_writes_thread = threading.Thread(target=self.receive_writes)
         receive_reads_thread = threading.Thread(target=self.receive_reads)
         receive_deletes_thread = threading.Thread(target=self.receive_deletes)
@@ -823,7 +819,7 @@ class File_System:
 
         leader_election_thread.start()
         receive_thread.start()
-        dequeue_thread.start()
+        # dequeue_thread.start()
         receive_writes_thread.start()
         receive_reads_thread.start()
         receive_deletes_thread.start()
