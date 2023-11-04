@@ -13,11 +13,11 @@ import time
 # Static variables
 MAX = 8192                  # Max size of message   
 BASE_PORT = 8000            # Base port number
-B = 4                       # Number of nodes to gossip with
-T_GOSSIP = 0.5              # Time interval for gossiping
-T_FAIL = 2                  # Time interval for failure detection
-T_SUSPECT = 2               # Time interval for suspicion
-T_CLEANUP = 6               # Time interval for cleanup
+B = 7                       # Number of nodes to gossip with
+T_GOSSIP = 0.1              # Time interval for gossiping
+T_FAIL = 10                  # Time interval for failure detection
+T_SUSPECT = 5               # Time interval for suspicion
+T_CLEANUP = 8               # Time interval for cleanup
 MESSAGE_DROP_RATE = 0.0     # Message drop rate
 
 
@@ -77,7 +77,7 @@ class Failure_Detector:
         self.machine.logger.debug("\n\n")
 
         for khost, v in msg_membership_list.active_nodes.items():
-            self.machine.logger.debug("MsgMembershipList, Host {}, Ctr {}".format(khost, v.membership_counter))
+            self.machine.logger.debug("MsgMembershipList of {}, Host {}, Ctr {}".format(msg_host, khost, v.membership_counter))
         self.machine.logger.debug("\n\n")
 
         # For each host in the received membership list, update the membership list of the current machine
@@ -325,6 +325,7 @@ class Failure_Detector:
                     GOSSIP_NODES.append((mem_host[0], mem_host[1]))
 
         gossip_neighbours = random.sample(GOSSIP_NODES, B) if B < len(GOSSIP_NODES) else GOSSIP_NODES
+        self.machine.logger.info(f'{self.machine.nodeId[1]} Gossiping to {gossip_neighbours}')
         for neighbour in gossip_neighbours:
             gossip_ip = neighbour[0]
             gossip_port = neighbour[1]
