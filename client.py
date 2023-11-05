@@ -435,14 +435,25 @@ class Client:
                 self.file_system.print_leader()
             
             elif inp == "write_wikicorpus":
+
                 file_paths = []
                 for name in os.listdir("../WikiCorpus/"):
-                    path = os.path.join("../Wikicorpus/", name)
+                    path = os.path.join("../WikiCorpus/", name)
                     file_paths.append(path)
                 
-                for fpath in file_paths:
+                start_time = datetime.datetime.now()
+                print(f"{len(file_paths)} in total")
+                for i, fpath in enumerate(sorted(file_paths)):
+                    self.put_start_time = datetime.datetime.now()
+
                     fname = os.path.basename(fpath)
                     self.put(fpath, fname)
+                    print(f"{i} done - {fname}")
+                    time.sleep(3)
+                
+                end_time = datetime.datetime.now()
+                print("Put corpus successfully{}\n".format((end_time - start_time).total_seconds()))
+
 
 
 
