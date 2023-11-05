@@ -17,8 +17,14 @@ from file_system import File_System
 OFFSET = 8000
 MAX = 8192                  # Max size of message
 INIT_STATUS = 'Not Joined'  # Initial status of a node
+<<<<<<< Updated upstream
 BASE_FS_PORT = 9000 + OFFSET
 BASE_PORT = 8000 + OFFSET
+=======
+BASE_FS_PORT = 9000
+BASE_PORT = 8000
+RAND_PORT = 57757
+>>>>>>> Stashed changes
 
 
 class Client:
@@ -105,65 +111,35 @@ class Client:
     
     def put(self, local_filename, sdfs_filename):
         ''' Put a file in the SDFS '''
+        leader_node = self.file_system.get_leader_node()
+
         sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-
-        # host = list(self.machine.membership_list.active_nodes.keys())[0]
-        host = self.machine.nodeId
-        modified_host = (host[0], host[3] + BASE_FS_PORT, host[2], host[3])
-        sock_fd.connect((modified_host[0], modified_host[1]))    
+        sock_fd.connect((leader_node[0], leader_node[1]))
 
         put_mssg = Message(msg_type="put", 
                         host=self.machine.nodeId,
                         membership_list=None,
                         counter=None,
                         filename=sdfs_filename,
+                        port=RAND_PORT
                         )                      
 
         self.send_message(sock_fd, pickle.dumps(put_mssg))
-        self.machine.logger.info(f'Put Message sent to {modified_host}')
-        data = sock_fd.recv(MAX)
-        mssg = pickle.loads(data)
+        self.machine.logger.info(f'Put Message sent to Leader Node')
         sock_fd.close()
 
-        if mssg.type == "leader":
-            self.machine.logger.info(f"Leader is: {mssg.kwargs['leader']}")
-            sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            sock_fd.connect((mssg.kwargs['leader'][0], mssg.kwargs['leader'][1]))
-            self.send_message(sock_fd, pickle.dumps(put_mssg))
+        recv_sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        recv_sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        recv_sock_fd.bind((self.ip, RAND_PORT))
+        recv_sock_fd.listen(1)
 
-            data = sock_fd.recv(MAX)
-            mssg = pickle.loads(data)
-            sock_fd.close()
+        conn, addr = recv_sock_fd.accept()
+        data = conn.recv(MAX)
+        mssg = pickle.loads(data)
+        conn.close()
 
-            if mssg.type == "replica":
-                self.machine.logger.info(f"Replica Servers: {mssg.kwargs['replica']}")
-
-                replicas = mssg.kwargs['replica']
-                threads = []
-                ack_count = [0] * len(replicas)
-                for i, replica in enumerate(replicas):
-                    t = threading.Thread(target=self.write_replicas, args=(replica, local_filename, sdfs_filename, ack_count, i))
-                    threads.append(t)
-
-                for t in threads:
-                    t.start()
-                for t in threads:
-                    t.join()
-                
-                if sum(ack_count) >= self.machine.WRITE_QUORUM:
-                    self.put_end_time = datetime.datetime.now()
-                    print("[ACK Received] Put file successfully{}\n".format((self.put_end_time - self.put_start_time).total_seconds()))
-
-                else:
-                    print("[ACK Not Received] Put file unsuccessfully\n")
-
-                # self.write_replicas(mssg, local_filename, sdfs_filename)
-            else:
-                print("Unsucceessful Attempt\n")
-
-        elif mssg.type == "replica":
+        if mssg.type == "replica":
             self.machine.logger.info(f"Replica Servers: {mssg.kwargs['replica']}")
 
             replicas = mssg.kwargs['replica']
@@ -180,14 +156,14 @@ class Client:
             
             if sum(ack_count) >= self.machine.WRITE_QUORUM:
                 self.put_end_time = datetime.datetime.now()
-                print("[ACK Received] Put file successfully{}\n".format((self.put_end_time - self.put_start_time).total_seconds()))
+                print("[ACK Received] Put file successfully")
+                print(f"Replicas where {local_filename} is stored: VM{replicas[0][3]}, VM{replicas[1][3]}, VM{replicas[2][3]}, VM{replicas[3][3]}")
+                print(f"Total Time Taken: {(self.put_end_time - self.put_start_time).total_seconds()}\n")
 
             else:
                 print("[ACK Not Received] Put file unsuccessfully\n")
 
-            # self.write_replicas(mssg, local_filename, sdfs_filename)                
-        else:
-            print("Unsuccessful Attempt\n")          
+            # self.write_replicas(mssg, local_filename, sdfs_filename)         
 
 
     def read_replicas(self, mssg, sdfs_filename, local_filename):
@@ -221,51 +197,42 @@ class Client:
 
     def get(self, sdfs_filename, local_filename):
         ''' Get a file from the SDFS '''
+        leader_node = self.file_system.get_leader_node()
+
         sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-
-        # host = list(self.machine.membership_list.active_nodes.keys())[0]
-        host = self.machine.nodeId
-        modified_host = (host[0], host[3] + BASE_FS_PORT, host[2], host[3])
-        sock_fd.connect((modified_host[0], modified_host[1]))    
+        sock_fd.connect((leader_node[0], leader_node[1]))   
 
         get_mssg = Message(msg_type="get", 
                         host=self.machine.nodeId,
                         membership_list=None,
                         counter=None,
                         filename=sdfs_filename,
+                        port=RAND_PORT
                         )
 
         self.send_message(sock_fd, pickle.dumps(get_mssg))
         self.machine.logger.info("Get Message sent")
-        data = sock_fd.recv(MAX)
-        mssg = pickle.loads(data)
         sock_fd.close()
-
-        if mssg.type == "leader":
-            self.machine.logger.info(f"Leader is: {mssg.kwargs['leader']}")
-            sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            sock_fd.connect((mssg.kwargs['leader'][0], mssg.kwargs['leader'][1]))
-            self.send_message(sock_fd, pickle.dumps(get_mssg))
             
-            data = sock_fd.recv(MAX)
-            mssg = pickle.loads(data)
-            sock_fd.close()
+        recv_sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        recv_sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        recv_sock_fd.bind((self.ip, RAND_PORT))
 
-            if mssg.type == "replica":
-                self.machine.logger.info(f"Replica Servers: {mssg.kwargs['replica']}")
-                self.read_replicas(mssg, sdfs_filename, local_filename)
-            else:
-                print("Unsuccessful Attempt")
+        recv_sock_fd.listen(1)
+        conn, addr = recv_sock_fd.accept()
+        data = conn.recv(MAX)
+        mssg = pickle.loads(data)
+        conn.close()
 
-        elif mssg.type == "replica":
+        if mssg.type == "replica":
             self.machine.logger.info(f"Replica Servers: {mssg.kwargs['replica']}")
-            self.read_replicas(mssg, sdfs_filename, local_filename)  
-
+            self.read_replicas(mssg, sdfs_filename, local_filename)
         elif mssg.type == "NACK":
             print("[ACK not Received] File not found in SDFS\n")
-    
+        else:
+            print("Unsuccessful Attempt")
+
     
     def multiread(self, sdfs_filename, local_filename, machines):
         leader_node = self.file_system.get_leader_node()
