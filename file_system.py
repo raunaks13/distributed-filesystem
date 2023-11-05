@@ -176,7 +176,13 @@ class File_System:
                                     self.machine.membership_list.file_replication_dict[file].add(mssg.host)
                                 
                                 if len(self.machine.membership_list.file_replication_dict[file]) == self.machine.REPLICATION_FACTOR: # should be min(num_machines, replication factor)
-                                    self.machine.membership_list.file_lock_set.remove(file)
+                                    self.machine.membership_list.write_lock_set.remove(file)
+                            
+                            elif mssg.type == 'read_ping':
+                                file = mssg.kwargs['replica']
+                                self.machine.membership_list.read_lock_dict[file] -= 1
+                                if self.machine.membership_list.read_lock_dict[file] == 0:
+                                    self.machine.membership_list.read_lock_dict.pop(file)
                             
                             elif mssg.type == 'delete_ping':
                                 file = mssg.kwargs['replica']
@@ -184,7 +190,7 @@ class File_System:
                                     self.machine.membership_list.file_replication_dict[file].remove(mssg.host)
                                 
                                 # if len(self.machine.membership_list.file_replication_dict[file]) == 0: # TODO: should the key even exist?
-                                #     self.machine.membership_list.file_lock_set.remove(file)
+                                #     self.machine.membership_list.write_lock_set.remove(file)
 
                         except Exception as e:
                             self.machine.logger.error(f"Error in receiving filestore ping: {e}")
@@ -462,7 +468,7 @@ class File_System:
                 f.close()
 
                 self.filestore_ping('w', filename)
-                print("Sending ACK to leader")
+                print("Sending ACK to client")
                 mssg = Message(msg_type='ACK',
                                 host=self.machine.nodeId,
                                 membership_list=None,
@@ -499,6 +505,15 @@ class File_System:
                         bytes_read = f.read()
                 
                 conn.shutdown(socket.SHUT_WR)
+                
+                self.filestore_ping('r', filename)
+                # print("Sending ACK to leader")
+                # mssg = Message(msg_type='ACK',
+                #                 host=self.machine.nodeId,
+                #                 membership_list=None,
+                #                 counter=None,
+                #               )
+                # self.send_message(conn, pickle.dumps(mssg))
                 
             finally:
                 conn.close()
@@ -566,9 +581,9 @@ class File_System:
         if mssg_type == 'put':
             # For Write messages       
             while True:
-                if sdfs_filename not in self.machine.membership_list.file_lock_set:
-                    self.machine.membership_list.file_lock_set.add(sdfs_filename)
-                    self.machine.logger.info(f"[Write] File Lock Set: {self.machine.membership_list.file_lock_set}")
+                if sdfs_filename not in self.machine.membership_list.write_lock_set:
+                    self.machine.membership_list.write_lock_set.add(sdfs_filename)
+                    self.machine.logger.info(f"[Write] File Lock Set: {self.machine.membership_list.write_lock_set}")
 
                     if sdfs_filename not in self.machine.membership_list.file_replication_dict:
                         # Choose Replication Servers if file is present
@@ -584,13 +599,16 @@ class File_System:
         elif (mssg_type == 'get' or mssg_type == 'multiread'):
             # For Read messages
                 
-            if sdfs_filename not in self.machine.membership_list.file_replication_dict:
-                replica_servers = []
-            else:
-                # Use the replication servers from the membership list
-                replica_servers = self.machine.membership_list.file_replication_dict[sdfs_filename]
-                replica_servers = [(server[0], server[1] - BASE_PORT + BASE_READ_PORT, server[2], server[3]) for server in replica_servers]
-                        
+            while True:
+                if (sdfs_filename in self.machine.membership_list.read_lock_dict.keys()) and \
+                    (self.machine.membership_list.read_lock_dict[sdfs_filename] <= 2):
+                    if sdfs_filename not in self.machine.membership_list.file_replication_dict:
+                        replica_servers = []
+                    else:
+                        # Use the replication servers from the membership list
+                        replica_servers = self.machine.membership_list.file_replication_dict[sdfs_filename]
+                        replica_servers = [(server[0], server[1] - BASE_PORT + BASE_READ_PORT, server[2], server[3]) for server in replica_servers]
+                            
         elif mssg_type == 'delete':
 
             # For Delete messages
