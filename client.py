@@ -14,11 +14,11 @@ from machine import Machine
 from failure_detector import Failure_Detector
 from file_system import File_System
 
-
-MAX = 8192                  # Max size of message   
+OFFSET = 8000
+MAX = 8192                  # Max size of message
 INIT_STATUS = 'Not Joined'  # Initial status of a node
-BASE_FS_PORT = 9000
-BASE_PORT = 8000
+BASE_FS_PORT = 9000 + OFFSET
+BASE_PORT = 8000 + OFFSET
 
 
 class Client:
@@ -408,6 +408,7 @@ class Client:
                 self.get(sdfs_filename, local_filename)
 
             elif inp.startswith("multiread"):
+                self.put_start_time = datetime.datetime.now()
                 tokens = inp.split(' ')
                 sdfs_filename = tokens[1]
                 local_filename = tokens[2]
@@ -444,15 +445,16 @@ class Client:
                 start_time = datetime.datetime.now()
                 print(f"{len(file_paths)} in total")
                 for i, fpath in enumerate(sorted(file_paths)):
+                    # if i < 29:
+                    #     continue
                     self.put_start_time = datetime.datetime.now()
 
                     fname = os.path.basename(fpath)
                     self.put(fpath, fname)
                     print(f"{i} done - {fname}")
-                    time.sleep(3)
                 
-                end_time = datetime.datetime.now()
-                print("Put corpus successfully{}\n".format((end_time - start_time).total_seconds()))
+                    end_time = datetime.datetime.now()
+                    print("Time elapsed so far: {}\n".format((end_time - start_time).total_seconds()))
 
 
 

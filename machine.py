@@ -8,4 +8,4 @@ class Machine:
         self.logger = None
         self.REPLICATION_FACTOR = 4
         self.WRITE_QUORUM = 4
-        self.BUFFER_SIZE = 4096
+        self.BUFFER_SIZE = 4096*1024*8

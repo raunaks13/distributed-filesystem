@@ -12,7 +12,8 @@ import time
 
 # Static variables
 MAX = 8192                  # Max size of message   
-BASE_PORT = 8000            # Base port number
+OFFSET = 8000
+BASE_PORT = 8000 + OFFSET   # Base port number
 B = 3                       # Number of nodes to gossip with
 T_GOSSIP = 0.5              # Time interval for gossiping
 T_FAIL = 4                  # Time interval for failure detection
