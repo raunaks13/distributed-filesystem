@@ -581,7 +581,9 @@ class File_System:
         if mssg_type == 'put':
             # For Write messages       
             while True:
-                if sdfs_filename not in self.machine.membership_list.write_lock_set:
+                if (sdfs_filename not in self.machine.membership_list.write_lock_set) and \
+                    (sdfs_filename not in self.machine.membership_list.read_lock_dict.keys()):
+                    
                     self.machine.membership_list.write_lock_set.add(sdfs_filename)
                     self.machine.logger.info(f"[Write] File Lock Set: {self.machine.membership_list.write_lock_set}")
 
@@ -600,14 +602,15 @@ class File_System:
             # For Read messages
                 
             while True:
-                if (sdfs_filename in self.machine.membership_list.read_lock_dict.keys()) and \
-                    (self.machine.membership_list.read_lock_dict[sdfs_filename] <= 2):
-                    if sdfs_filename not in self.machine.membership_list.file_replication_dict:
-                        replica_servers = []
-                    else:
-                        # Use the replication servers from the membership list
-                        replica_servers = self.machine.membership_list.file_replication_dict[sdfs_filename]
-                        replica_servers = [(server[0], server[1] - BASE_PORT + BASE_READ_PORT, server[2], server[3]) for server in replica_servers]
+                if sdfs_filename not in self.machine.membership_list.write_lock_set:
+                    if (sdfs_filename in self.machine.membership_list.read_lock_dict.keys()) and \
+                        (self.machine.membership_list.read_lock_dict[sdfs_filename] <= 2):
+                        if sdfs_filename not in self.machine.membership_list.file_replication_dict:
+                            replica_servers = []
+                        else:
+                            # Use the replication servers from the membership list
+                            replica_servers = self.machine.membership_list.file_replication_dict[sdfs_filename]
+                            replica_servers = [(server[0], server[1] - BASE_PORT + BASE_READ_PORT, server[2], server[3]) for server in replica_servers]
                             
         elif mssg_type == 'delete':
 
