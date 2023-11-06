@@ -16,7 +16,7 @@ from collections import defaultdict
 import copy
 
 # Static variables
-OFFSET = 8000
+OFFSET = 0
 BASE_PORT = 8000 + OFFSET
 BASE_FS_PORT = 9000 + OFFSET
 BASE_WRITE_PORT = 10000 + OFFSET
@@ -177,12 +177,13 @@ class File_System:
                                 
                                 if len(self.machine.membership_list.file_replication_dict[file]) == self.machine.REPLICATION_FACTOR: # should be min(num_machines, replication factor)
                                     self.machine.membership_list.write_lock_set.remove(file)
+                                    print("Done")
                             
                             elif mssg.type == 'read_ping':
                                 file = mssg.kwargs['replica']
                                 self.machine.membership_list.read_lock_dict[file] -= 1
-                                if self.machine.membership_list.read_lock_dict[file] == 0:
-                                    self.machine.membership_list.read_lock_dict.pop(file)
+                                print(f"Read Lock Dict after ack at reader: {self.machine.membership_list.read_lock_dict[file]}")
+
                             
                             elif mssg.type == 'delete_ping':
                                 file = mssg.kwargs['replica']
@@ -467,7 +468,9 @@ class File_System:
 
                 f.close()
 
+                # Sending ACK to leader
                 self.filestore_ping('w', filename)
+                
                 print("Sending ACK to client")
                 mssg = Message(msg_type='ACK',
                                 host=self.machine.nodeId,
@@ -505,7 +508,6 @@ class File_System:
                         bytes_read = f.read()
                 
                 conn.shutdown(socket.SHUT_WR)
-                
                 self.filestore_ping('r', filename)
                 # print("Sending ACK to leader")
                 # mssg = Message(msg_type='ACK',
@@ -582,17 +584,19 @@ class File_System:
             # For Write messages       
             while True:
                 if (sdfs_filename not in self.machine.membership_list.write_lock_set) and \
-                    (sdfs_filename not in self.machine.membership_list.read_lock_dict.keys()):
-                    
+                    (self.machine.membership_list.read_lock_dict[sdfs_filename] == 0):
+                    print("Leader work")
                     self.machine.membership_list.write_lock_set.add(sdfs_filename)
                     self.machine.logger.info(f"[Write] File Lock Set: {self.machine.membership_list.write_lock_set}")
 
                     if sdfs_filename not in self.machine.membership_list.file_replication_dict:
+                        print("Leader work2")
                         # Choose Replication Servers if file is present
                         servers = self.machine.membership_list.active_nodes.keys()
                         replica_servers = random.sample(servers, self.machine.REPLICATION_FACTOR)
                         replica_servers = [(server[0], server[1] - BASE_PORT + BASE_WRITE_PORT, server[2], server[3]) for server in replica_servers]
                     else:
+                        print("Leader work3")
                         replica_servers = self.machine.membership_list.file_replication_dict[sdfs_filename]
                         replica_servers = [(server[0], server[1] - BASE_PORT + BASE_WRITE_PORT, server[2], server[3]) for server in replica_servers]
 
@@ -603,14 +607,18 @@ class File_System:
                 
             while True:
                 if sdfs_filename not in self.machine.membership_list.write_lock_set:
-                    if (sdfs_filename in self.machine.membership_list.read_lock_dict.keys()) and \
-                        (self.machine.membership_list.read_lock_dict[sdfs_filename] <= 2):
+                    self.machine.membership_list.read_lock_dict[sdfs_filename] += 1
+                    print(f"Read Lock in Leader Work: {self.machine.membership_list.read_lock_dict[sdfs_filename]}")
+                    if self.machine.membership_list.read_lock_dict[sdfs_filename] <= 2:
+                        
+                        # self.machine.membership_list.read_lock_dict[sdfs_filename] += 1
                         if sdfs_filename not in self.machine.membership_list.file_replication_dict:
                             replica_servers = []
                         else:
                             # Use the replication servers from the membership list
                             replica_servers = self.machine.membership_list.file_replication_dict[sdfs_filename]
                             replica_servers = [(server[0], server[1] - BASE_PORT + BASE_READ_PORT, server[2], server[3]) for server in replica_servers]
+                        break
                             
         elif mssg_type == 'delete':
 
@@ -634,7 +642,9 @@ class File_System:
 
     def implement_write(self, recv_mssg):
         time.sleep(1)
+        print("In implement_write")
         replicas = self.leader_work(recv_mssg.type, recv_mssg.kwargs['filename'])
+        print("In implement_write2")
         mssg = Message(msg_type='replica',
                         host=self.machine.nodeId,
                         membership_list=None,
@@ -681,9 +691,11 @@ class File_System:
     def dequeue(self):
         while True:
             if len(self.write_queue) > 0 and len(self.read_queue) == 0:
+                print("Here1")
                 self.op_timestamps.pop(0)
                 write_req = self.write_queue.pop(0)
                 recv_mssg = write_req[1]
+                print("Here1.1")
                 self.implement_write(recv_mssg)
 
             elif len(self.write_queue) == 0 and len(self.read_queue) > 0:
@@ -705,12 +717,14 @@ class File_System:
                             break
 
                 elif self.write_queue[0][2] >= 4:
+                    print("Here2")
                     while True:
                         if len(self.write_queue) > 0 and self.write_queue[0][2] >= 4:
                             write_req = self.write_queue.pop(0)
                             self.op_timestamps.remove(write_req[0])
                             for i in range(len(self.read_queue)):
                                 self.read_queue[i] = (self.read_queue[i][0], self.read_queue[i][1], self.read_queue[i][2]+1)
+                            print("Here2.2")
                             self.implement_write(write_req[1])
                         else:
                             break
@@ -718,9 +732,11 @@ class File_System:
                 else:
                     op = self.op_timestamps.pop(0)
                     if 'w' in op:
+                        print("Here3")
                         write_req = self.write_queue.pop(0)
                         for i in range(len(self.read_queue)):
                             self.read_queue[i] = (self.read_queue[i][0], self.read_queue[i][1], self.read_queue[i][2]+1)
+                        print("Here3.3")
                         self.implement_write(write_req[1])
                     else:
                         read_req = self.read_queue.pop(0)

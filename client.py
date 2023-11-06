@@ -14,17 +14,12 @@ from machine import Machine
 from failure_detector import Failure_Detector
 from file_system import File_System
 
-OFFSET = 8000
+OFFSET = 0
 MAX = 8192                  # Max size of message
 INIT_STATUS = 'Not Joined'  # Initial status of a node
-<<<<<<< Updated upstream
 BASE_FS_PORT = 9000 + OFFSET
 BASE_PORT = 8000 + OFFSET
-=======
-BASE_FS_PORT = 9000
-BASE_PORT = 8000
 RAND_PORT = 57757
->>>>>>> Stashed changes
 
 
 class Client:
@@ -192,7 +187,8 @@ class Client:
         
         sock_fd.close()
         self.get_end_time = datetime.datetime.now()
-        print("[ACK Received] Get file successfully{}\n".format((self.get_end_time - self.get_start_time).total_seconds()))
+        print("[ACK Received] Get file successfully")
+        print(f"Total Time Taken: {(self.get_end_time - self.get_start_time).total_seconds()}\n")
 
 
     def get(self, sdfs_filename, local_filename):
@@ -375,7 +371,7 @@ class Client:
                 self.get(sdfs_filename, local_filename)
 
             elif inp.startswith("multiread"):
-                self.put_start_time = datetime.datetime.now()
+                self.get_start_time = datetime.datetime.now()
                 tokens = inp.split(' ')
                 sdfs_filename = tokens[1]
                 local_filename = tokens[2]
@@ -422,10 +418,6 @@ class Client:
                 
                     end_time = datetime.datetime.now()
                     print("Time elapsed so far: {}\n".format((end_time - start_time).total_seconds()))
-
-
-
-
 
 
     def start_machine(self):

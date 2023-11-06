@@ -35,7 +35,7 @@ class MembershipList:
         self.cleanup_status_dict = {} # 0: not cleaning up, 1: host in cleanup state 
         self.file_replication_dict = {}
         self.write_lock_set = set()
-        self.read_lock_dict = {}
+        self.read_lock_dict = defaultdict(int)
         self.failed_nodes = []
 
     def put_replica(self, sdfs_filename, dest_host):
