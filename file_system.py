@@ -16,7 +16,7 @@ from collections import defaultdict
 import copy
 
 # Static variables
-OFFSET = 0
+OFFSET = 8000
 BASE_PORT = 8000 + OFFSET
 BASE_FS_PORT = 9000 + OFFSET
 BASE_WRITE_PORT = 10000 + OFFSET
@@ -602,7 +602,7 @@ class File_System:
 
                     break           
 
-        elif (mssg_type == 'get' or mssg_type == 'multiread'):
+        elif mssg_type == 'get':
             # For Read messages
                 
             while True:
@@ -619,6 +619,16 @@ class File_System:
                             replica_servers = self.machine.membership_list.file_replication_dict[sdfs_filename]
                             replica_servers = [(server[0], server[1] - BASE_PORT + BASE_READ_PORT, server[2], server[3]) for server in replica_servers]
                         break
+        
+        elif mssg_type == 'multiread':
+                        
+            # self.machine.membership_list.read_lock_dict[sdfs_filename] += 1
+            if sdfs_filename not in self.machine.membership_list.file_replication_dict:
+                replica_servers = []
+            else:
+                # Use the replication servers from the membership list
+                replica_servers = self.machine.membership_list.file_replication_dict[sdfs_filename]
+                replica_servers = [(server[0], server[1] - BASE_PORT + BASE_READ_PORT, server[2], server[3]) for server in replica_servers]
                             
         elif mssg_type == 'delete':
 
@@ -836,40 +846,50 @@ class File_System:
                                 self.send_message(conn, pickle.dumps(mssg))
                             else:
                                 # For each VM in the multiread group, send the replica list
-                                for machine in recv_mssg.kwargs['machines']:
-                                    machine_num = int(machine[2:])
-                                    
-                                    if machine_num == recv_mssg.host[3]:
-                                        mssg = Message(msg_type='replica',
-                                                        host=self.machine.nodeId,
-                                                        membership_list=None,
-                                                        counter=None,
-                                                        replica=replicas
-                                                        )
-                                        self.send_message(conn, pickle.dumps(mssg))
-                                    else:
-                                        all_nodes = list(self.machine.membership_list.active_nodes.keys())
-                                        # Find the VM IP and Port where multiread need to initiated
-                                        send_node = None
-                                        for node in all_nodes:
-                                            if node[3] == machine_num:
-                                                send_node = node
-                                                break
-                                        
-                                        new_sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                                        new_sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                                        new_sock_fd.connect((send_node[0], BASE_FS_PORT  + send_node[3]))
+                                sdfs_filename = recv_mssg.kwargs['sdfs_filename']
 
-                                        mssg = Message(msg_type='multiread_get',
-                                                        host=self.machine.nodeId,
-                                                        membership_list=None,
-                                                        counter=None,
-                                                        sdfs_filename=recv_mssg.kwargs['sdfs_filename'],
-                                                        local_filename=recv_mssg.kwargs['local_filename'],
-                                                        replica=replicas
-                                                        )
-                                        self.send_message(new_sock_fd, pickle.dumps(mssg))
-                                        new_sock_fd.close()
+                                for machine in recv_mssg.kwargs['machines']:
+                                    while True:
+                                        if sdfs_filename not in self.machine.membership_list.write_lock_set:
+                                            if self.machine.membership_list.read_lock_dict[sdfs_filename] < 2:
+                                                self.machine.membership_list.read_lock_dict[sdfs_filename] += 1
+                                                print(f"Read Lock in Leader Work: {self.machine.membership_list.read_lock_dict[sdfs_filename]}")
+
+                                                machine_num = int(machine[2:])
+                                                
+                                                if machine_num == recv_mssg.host[3]:
+                                                    mssg = Message(msg_type='replica',
+                                                                    host=self.machine.nodeId,
+                                                                    membership_list=None,
+                                                                    counter=None,
+                                                                    replica=replicas
+                                                                    )
+                                                    self.send_message(conn, pickle.dumps(mssg))
+                                                else:
+                                                    all_nodes = list(self.machine.membership_list.active_nodes.keys())
+                                                    # Find the VM IP and Port where multiread need to initiated
+                                                    send_node = None
+                                                    for node in all_nodes:
+                                                        if node[3] == machine_num:
+                                                            send_node = node
+                                                            break
+                                                    
+                                                    new_sock_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                                                    new_sock_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                                                    new_sock_fd.connect((send_node[0], BASE_FS_PORT  + send_node[3]))
+
+                                                    mssg = Message(msg_type='multiread_get',
+                                                                    host=self.machine.nodeId,
+                                                                    membership_list=None,
+                                                                    counter=None,
+                                                                    sdfs_filename=recv_mssg.kwargs['sdfs_filename'],
+                                                                    local_filename=recv_mssg.kwargs['local_filename'],
+                                                                    replica=replicas
+                                                                    )
+                                                    self.send_message(new_sock_fd, pickle.dumps(mssg))
+                                                    new_sock_fd.close()
+                                                
+                                                break
 
                     elif recv_mssg.type == 'delete':
                         if self.machine.nodeId[3] == self.leader_node[3]:

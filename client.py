@@ -14,7 +14,7 @@ from machine import Machine
 from failure_detector import Failure_Detector
 from file_system import File_System
 
-OFFSET = 0
+OFFSET = 8000
 MAX = 8192                  # Max size of message
 INIT_STATUS = 'Not Joined'  # Initial status of a node
 BASE_FS_PORT = 9000 + OFFSET
